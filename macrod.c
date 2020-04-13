@@ -1,3 +1,4 @@
+/* Standard stuff */
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +10,10 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <unistd.h>
+/* Polling */
+#include <poll.h>
+/* Signaling */
+#include <signal.h>
 
 #ifdef __linux__
 	#include <linux/input.h>
@@ -22,56 +27,86 @@ struct pressed_buffer {
 	unsigned int size;
 };
 
+int term = 0; // Received SIGTERM flag
+
 int pressBufferAdd (struct pressed_buffer*, unsigned short);
 int pressBufferRemove (struct pressed_buffer*, unsigned short);
+void termHandler (int signum);
 
 int main (void) // remember getopt() to automaically parse options
 {
-	int fd;
-	fd = open("/dev/input/event0", O_RDONLY); // TEST: O_NONBLOCK
-	if (!fd) {
+	term = 0;
+	struct sigaction action;
+	memset(&action, 0, sizeof(action));
+	action.sa_handler = termHandler;
+	sigaction(SIGINT, &action, NULL);
+
+	struct pollfd fds[2];
+	
+	fds[0].events = POLLIN;
+	fds[0].fd = open("/dev/input/event0", O_RDONLY); // TEST: O_NONBLOCK
+	if (!fds[0].fd) {
+		fputs(strerror(errno), stderr); 
+		exit(errno);
+	}
+	
+	fds[1].events = POLLIN;
+	fds[1].fd = open("/dev/input/event3", O_RDONLY);
+	if (!fds[1].fd) {
 		fputs(strerror(errno), stderr); 
 		exit(errno);
 	}
 
-	//int f2 = open("/dev/input/event3", O_RDONLY);
-	//struct input_event ev;
-
 	struct input_event event;
 	struct pressed_buffer pb = {NULL, 0}; // Pressed keys buffer	
+	ssize_t rb; // Read bits
 
-	while (1) {
-		/* Use polling poll(2) to wait por a file dscriptor to become ready for reading.
+	while (poll(fds, 2, -1) != -1 || !term) {
+		/* Use poll(2) to wait por a file dscriptor to become ready for reading.
 		 * NOTE: this could use select(2) but I don't know how */
 		
-		//fread(&event, sizeof(struct input_event), 1, fp);
+		static int i;
+		static int prev_size;
+		
+		prev_size = pb.size;
+		for (i = 0; i < 2; i++) {
+			if (fds[i].revents == fds[i].events) {
 
-		ssize_t rb;
-		rb = read(fd, &event, sizeof(struct input_event));
-		if (rb != sizeof(struct input_event)) continue;
+				rb = read(fds[i].fd, &event, sizeof(struct input_event));
+				if (rb != sizeof(struct input_event)) continue;
 
-		if (event.type == EV_KEY) {
-			
-			switch (event.value) {
-				case (0): // Key release
-					pressBufferRemove(&pb, event.code);
-					break;
-				case (1): // Key press
-					pressBufferAdd(&pb, event.code);
-					break;
+				if (event.type == EV_KEY) {
+					switch (event.value) {
+						/* Key released */
+						case (0):
+							pressBufferRemove(&pb, event.code);
+							break;
+						/* Key pressed */
+						case (1):
+							pressBufferAdd(&pb, event.code);
+							break;
+					}
+				}
 			}
-
+		}
+		
+		if (pb.size != prev_size) {
 			printf("Pressed keys: ");
 			for (int i = 0; i < pb.size; i++)
 				printf("%d ", pb.buf[i]);
 			putchar('\n');
 		}
+
 	}
 
-	if (close(fd) == -1) {
-		fputs(strerror(errno), stderr);
-		exit(errno);
-	}	
+	if (!term)
+		fputs("An error occured\n", stderr);
+	for (int i = 0; i < 2; i++) {
+			if (close(fds[i].fd) == -1) {
+				fputs(strerror(errno), stderr);
+				exit(errno);
+			}
+	}
 	return 0;
 }
 
@@ -122,4 +157,9 @@ int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
 	}
 
 	return 1;
+}
+
+void termHandler (int signum) {
+	fputs("Received interrupt signal, exiting gracefully...\n", stderr);
+	term = 1;
 }
