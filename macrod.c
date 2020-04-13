@@ -3,9 +3,12 @@
 #include <string.h>
 /* Standard errors */
 #include <errno.h>
-/* Directory control */
+/* Directory and file control */
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <dirent.h>
+#include <unistd.h>
 
 #ifdef __linux__
 	#include <linux/input.h>
@@ -24,18 +27,29 @@ int pressBufferRemove (struct pressed_buffer*, unsigned short);
 
 int main (void) // remember getopt() to automaically parse options
 {
-	FILE *fp;
-	fp = fopen("/dev/input/event0", "r");
-	if (fp == NULL) {
+	int fd;
+	fd = open("/dev/input/event0", O_RDONLY); // TEST: O_NONBLOCK
+	if (!fd) {
 		fputs(strerror(errno), stderr); 
 		exit(errno);
 	}
 
+	//int f2 = open("/dev/input/event3", O_RDONLY);
+	//struct input_event ev;
+
 	struct input_event event;
 	struct pressed_buffer pb = {NULL, 0}; // Pressed keys buffer	
 
-	while (!ferror(fp)) {
-		fread(&event, sizeof(struct input_event), 1, fp);
+	while (1) {
+		/* Use polling poll(2) to wait por a file dscriptor to become ready for reading.
+		 * NOTE: this could use select(2) but I don't know how */
+		
+		//fread(&event, sizeof(struct input_event), 1, fp);
+
+		ssize_t rb;
+		rb = read(fd, &event, sizeof(struct input_event));
+		if (rb != sizeof(struct input_event)) continue;
+
 		if (event.type == EV_KEY) {
 			
 			switch (event.value) {
@@ -54,7 +68,7 @@ int main (void) // remember getopt() to automaically parse options
 		}
 	}
 
-	if (fclose(fp) == EOF) {
+	if (close(fd) == -1) {
 		fputs(strerror(errno), stderr);
 		exit(errno);
 	}	
