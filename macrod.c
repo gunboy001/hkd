@@ -28,42 +28,67 @@ struct pressed_buffer {
 };
 
 int term = 0; // Received SIGTERM flag
+const char ev_root[] = "/dev/input/";
 
 int pressBufferAdd (struct pressed_buffer*, unsigned short);
 int pressBufferRemove (struct pressed_buffer*, unsigned short);
 void termHandler (int signum);
 
-// FIXME: use getopts() to parse commanfìd line options
+// TODO: use getopts() to parse commanfìd line options
 int main (void)
 {
+	/* Handle SIGINT */
 	term = 0;
 	struct sigaction action;
 	memset(&action, 0, sizeof(action));
 	action.sa_handler = termHandler;
 	sigaction(SIGINT, &action, NULL);
 
-	struct pollfd fds[2];
-	
-	fds[0].events = POLLIN;
-	// FIXME: test if option O_NONBLOCK has effects on performance
-	fds[0].fd = open("/dev/input/event0", O_RDONLY | O_NONBLOCK);
-	if (!fds[0].fd) {
-		fputs(strerror(errno), stderr); 
-		exit(errno);
+	DIR *ev_dir = opendir(ev_root);
+	if (!ev_dir)	{
+			fputs(strerror(errno), stderr);
+			exit(errno);
 	}
 	
-	fds[1].events = POLLIN;
-	fds[1].fd = open("/dev/input/event3", O_RDONLY | O_NONBLOCK);
-	if (!fds[1].fd) {
-		fputs(strerror(errno), stderr); 
-		exit(errno);
+	char ev_path[sizeof(ev_root) + NAME_MAX];
+	struct dirent *file_ent;
+	void *tmp;
+	int fd_num = 0;
+	struct pollfd *fds = NULL;
+	while ((file_ent = readdir(ev_dir)) != NULL) {
+		if (file_ent->d_type == DT_CHR) {
+				
+			tmp = realloc(fds, sizeof(struct pollfd) * (fd_num + 1));
+			if (!tmp) {
+					fputs(strerror(errno), stderr);
+					exit(errno);
+			}
+			fds = tmp;
+			
+			strncpy(ev_path, ev_root, sizeof(ev_root) + NAME_MAX);
+		   	strncat(ev_path, file_ent->d_name, sizeof(ev_root) + NAME_MAX);
+			
+			fds[fd_num].events = POLLIN;
+			// TODO: test performance ipact of O_NONBLOCK
+			fds[fd_num].fd = open(ev_path, O_RDONLY | O_NONBLOCK);
+			if (!fds[fd_num].fd) {
+				fputs(strerror(errno), stderr);
+				exit(errno);
+			}
+			fd_num++;
+		}
 	}
+	closedir(ev_dir);
+	// TODO: watch for events inside /dev/input and reload accordingly
+	// could use the inotify API (linux specific), a separate process
+	// or some polling system inside the main loop to maintain portability
+	// across other *NIX derivatives
 
 	struct input_event event;
 	struct pressed_buffer pb = {NULL, 0}; // Pressed keys buffer	
 	ssize_t rb; // Read bits
 
-	while (poll(fds, 2, -1) != -1 || !term) {
+	while (poll(fds, fd_num, -1) != -1 && !term) {
 		/* Use poll(2) to wait por a file dscriptor to become ready for reading.
 		 * NOTE: this could use select(2) but I don't know how */
 		
@@ -71,13 +96,21 @@ int main (void)
 		static int prev_size;
 		
 		prev_size = pb.size;
-		for (i = 0; i < 2; i++) {
+		for (i = 0; i < fd_num; i++) {
 			if (fds[i].revents == fds[i].events) {
 
 				rb = read(fds[i].fd, &event, sizeof(struct input_event));
 				if (rb != sizeof(struct input_event)) continue;
 
-				if (event.type == EV_KEY) {
+				/* Ignore touchpad events */
+				// TODO: make a event blacklist system
+				if (
+								event.type == EV_KEY &&
+							   	event.code != BTN_TOUCH &&
+							   	event.code != BTN_TOOL_FINGER &&
+								event.code != BTN_TOOL_DOUBLETAP &&
+								event.code != BTN_TOOL_TRIPLETAP
+					) {
 					switch (event.value) {
 						/* Key released */
 						case (0):
@@ -92,7 +125,7 @@ int main (void)
 			}
 		}
 	
-		// FIXME: use fork and execl(3) to run the appropriate scripts
+		// TODO: use fork and execl(3) to run the appropriate scripts
 		if (pb.size != prev_size) {
 			printf("Pressed keys: ");
 			for (int i = 0; i < pb.size; i++)
@@ -102,9 +135,10 @@ int main (void)
 
 	}
 
+	free(pb.buf);
 	if (!term)
 		fputs("An error occured\n", stderr);
-	for (int i = 0; i < 2; i++) {
+	for (int i = 0; i < fd_num; i++) {
 			if (close(fds[i].fd) == -1) {
 				fputs(strerror(errno), stderr);
 				exit(errno);
@@ -126,7 +160,7 @@ int pressBufferAdd (struct pressed_buffer *pb, unsigned short key)
 	}
 	
 	unsigned short *b;
-		b = realloc(pb->buf, sizeof(unsigned short) * pb->size + 1);
+		b = realloc(pb->buf, sizeof(unsigned short) * (pb->size + 1));
 	if (!b) {
 		fprintf(stderr, "realloc failed in pressBufferAdd: %s", strerror(errno));
 		exit(errno);
