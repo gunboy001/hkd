@@ -33,7 +33,8 @@ int pressBufferAdd (struct pressed_buffer*, unsigned short);
 int pressBufferRemove (struct pressed_buffer*, unsigned short);
 void termHandler (int signum);
 
-int main (void) // remember getopt() to automaically parse options
+// FIXME: use getopts() to parse commanfìd line options
+int main (void)
 {
 	term = 0;
 	struct sigaction action;
@@ -44,14 +45,15 @@ int main (void) // remember getopt() to automaically parse options
 	struct pollfd fds[2];
 	
 	fds[0].events = POLLIN;
-	fds[0].fd = open("/dev/input/event0", O_RDONLY); // TEST: O_NONBLOCK
+	// FIXME: test if option O_NONBLOCK has effects on performance
+	fds[0].fd = open("/dev/input/event0", O_RDONLY | O_NONBLOCK);
 	if (!fds[0].fd) {
 		fputs(strerror(errno), stderr); 
 		exit(errno);
 	}
 	
 	fds[1].events = POLLIN;
-	fds[1].fd = open("/dev/input/event3", O_RDONLY);
+	fds[1].fd = open("/dev/input/event3", O_RDONLY | O_NONBLOCK);
 	if (!fds[1].fd) {
 		fputs(strerror(errno), stderr); 
 		exit(errno);
@@ -89,7 +91,8 @@ int main (void) // remember getopt() to automaically parse options
 				}
 			}
 		}
-		
+	
+		// FIXME: use fork and execl(3) to run the appropriate scripts
 		if (pb.size != prev_size) {
 			printf("Pressed keys: ");
 			for (int i = 0; i < pb.size; i++)
