@@ -27,7 +27,7 @@ struct pressed_buffer {
 	unsigned int size;
 };
 
-int term = 0; // Received SIGTERM flag
+int term = 0; // exit flag
 const char ev_root[] = "/dev/input/";
 
 int pressBufferAdd (struct pressed_buffer*, unsigned short);
@@ -80,14 +80,17 @@ int main (void)
 	}
 	closedir(ev_dir);
 	// TODO: watch for events inside /dev/input and reload accordingly
-	// could use the inotify API (linux specific), a separate process
-	// or some polling system inside the main loop to maintain portability
-	// across other *NIX derivatives
+	// could use the epoll syscall or the inotify API (linux), 
+	// event API (openbsd), kqueue syscall (BSD and macos), a separate
+	// process or some polling system inside the main loop to maintain
+	// portability across other *NIX derivatives, could also use libev
 
 	struct input_event event;
 	struct pressed_buffer pb = {NULL, 0}; // Pressed keys buffer	
 	ssize_t rb; // Read bits
 
+	// TODO: optimize the loop with an O(1) call as it runs for every
+	// event, some of those are in the previous comment
 	while (poll(fds, fd_num, -1) != -1 && !term) {
 		/* Use poll(2) to wait por a file dscriptor to become ready for reading.
 		 * NOTE: this could use select(2) but I don't know how */
