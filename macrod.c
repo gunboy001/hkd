@@ -17,6 +17,7 @@
 
 #ifdef __linux__
 	#include <linux/input.h>
+	#include <sys/epoll.h>
 #endif 
 #ifdef __FreeBSD__
 	#include <dev/evdev/input.h>
@@ -33,6 +34,7 @@ const char ev_root[] = "/dev/input/";
 int pressBufferAdd (struct pressed_buffer*, unsigned short);
 int pressBufferRemove (struct pressed_buffer*, unsigned short);
 void termHandler (int signum);
+void die (void);
 
 // TODO: use getopts() to parse commanfìd line options
 int main (void)
@@ -45,11 +47,8 @@ int main (void)
 	sigaction(SIGINT, &action, NULL);
 
 	DIR *ev_dir = opendir(ev_root);
-	if (!ev_dir)	{
-			fputs(strerror(errno), stderr);
-			exit(errno);
-	}
-	
+	if (!ev_dir) die();
+
 	char ev_path[sizeof(ev_root) + NAME_MAX];
 	struct dirent *file_ent;
 	void *tmp;
@@ -59,10 +58,7 @@ int main (void)
 		if (file_ent->d_type == DT_CHR) {
 				
 			tmp = realloc(fds, sizeof(struct pollfd) * (fd_num + 1));
-			if (!tmp) {
-					fputs(strerror(errno), stderr);
-					exit(errno);
-			}
+			if (!tmp) die();
 			fds = tmp;
 			
 			strncpy(ev_path, ev_root, sizeof(ev_root) + NAME_MAX);
@@ -71,10 +67,8 @@ int main (void)
 			fds[fd_num].events = POLLIN;
 			// TODO: test performance ipact of O_NONBLOCK
 			fds[fd_num].fd = open(ev_path, O_RDONLY | O_NONBLOCK);
-			if (!fds[fd_num].fd) {
-				fputs(strerror(errno), stderr);
-				exit(errno);
-			}
+			if (!fds[fd_num].fd) die();
+
 			fd_num++;
 		}
 	}
@@ -89,18 +83,45 @@ int main (void)
 	struct pressed_buffer pb = {NULL, 0}; // Pressed keys buffer	
 	ssize_t rb; // Read bits
 
+	/* Prepare for using epoll */
+	#ifdef __linux__
+	struct epoll_event epoll_read_ev;
+	epoll_read_ev.events = EPOLLIN;
+	int ev_fd = epoll_create(1);
+	if (ev_fd == -1) die();
+	for (int i = 0; i < fd_num; i++)
+		if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) == -1)
+			die();
+	#endif
+
 	// TODO: optimize the loop with an O(1) call as it runs for every
 	// event, some of those are in the previous comment
-	while (poll(fds, fd_num, -1) != -1 && !term) {
-		/* Use poll(2) to wait por a file dscriptor to become ready for reading.
-		 * NOTE: this could use select(2) but I don't know how */
+	for (;;) {
+		
+		// TODO: better error reporting	
+		/* On linux use epoll(2) as it gives better performance */
+		#ifdef __linux__
+		static struct epoll_event ev_type;
+		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) == -1 || term)
+			break;
+		
+		/* On other systems use poll(2) to wait por a file dscriptor 
+		 * to become ready for reading. */
+		#else
+		if (poll(fds, fd_num, -1) != -1 || term)
+			break;
+		#endif
 		
 		static int i;
 		static int prev_size;
 		
 		prev_size = pb.size;
 		for (i = 0; i < fd_num; i++) {
+			#ifdef __linux__
+			if (ev_type.events == EPOLLIN) {
+			#else
 			if (fds[i].revents == fds[i].events) {
+			#endif
 
 				rb = read(fds[i].fd, &event, sizeof(struct input_event));
 				if (rb != sizeof(struct input_event)) continue;
@@ -108,11 +129,11 @@ int main (void)
 				/* Ignore touchpad events */
 				// TODO: make a event blacklist system
 				if (
-								event.type == EV_KEY &&
-							   	event.code != BTN_TOUCH &&
-							   	event.code != BTN_TOOL_FINGER &&
-								event.code != BTN_TOOL_DOUBLETAP &&
-								event.code != BTN_TOOL_TRIPLETAP
+						event.type == EV_KEY &&
+					   	event.code != BTN_TOUCH &&
+					   	event.code != BTN_TOOL_FINGER &&
+						event.code != BTN_TOOL_DOUBLETAP &&
+						event.code != BTN_TOOL_TRIPLETAP
 					) {
 					switch (event.value) {
 						/* Key released */
@@ -142,14 +163,12 @@ int main (void)
 	if (!term)
 		fputs("An error occured\n", stderr);
 	for (int i = 0; i < fd_num; i++) {
-			if (close(fds[i].fd) == -1) {
-				fputs(strerror(errno), stderr);
-				exit(errno);
-			}
+			if (close(fds[i].fd) == -1) die();
 	}
 	return 0;
 }
 
+// TODO: optimize functions to preallocate some memory
 int pressBufferAdd (struct pressed_buffer *pb, unsigned short key)
 {
 /* Adds a keycode to the pressed buffer if it is not already present 
@@ -202,4 +221,9 @@ int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
 void termHandler (int signum) {
 	fputs("Received interrupt signal, exiting gracefully...\n", stderr);
 	term = 1;
+}
+
+void die (void) {
+	fputs(strerror(errno), stderr);
+	exit(errno);
 }
