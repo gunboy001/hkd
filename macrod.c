@@ -15,13 +15,21 @@
 /* Signaling */
 #include <signal.h>
 
+/* Determine dependencies based on platform */
 #ifdef __linux__
+	#define OS linux
 	#include <linux/input.h>
 	#include <sys/epoll.h>
 #endif 
 #ifdef __FreeBSD__
+	#define OS bsd
 	#include <dev/evdev/input.h>
 #endif
+#ifndef OS
+	#define OS unix
+#endif
+
+// TODO: add children linked list structure and methods
 
 struct pressed_buffer {
 	unsigned short *buf;
@@ -35,8 +43,9 @@ int pressBufferAdd (struct pressed_buffer*, unsigned short);
 int pressBufferRemove (struct pressed_buffer*, unsigned short);
 void termHandler (int signum);
 void die (void);
+void execCommand(const char *);
 
-// TODO: use getopts() to parse commanfìd line options
+// TODO: use getopts() to parse command line options
 int main (void)
 {
 	/* Handle SIGINT */
@@ -49,7 +58,7 @@ int main (void)
 	DIR *ev_dir = opendir(ev_root);
 	if (!ev_dir) die();
 
-	char ev_path[sizeof(ev_root) + NAME_MAX];
+	char ev_path[sizeof(ev_root) + NAME_MAX + 1];
 	struct dirent *file_ent;
 	void *tmp;
 	int fd_num = 0;
@@ -65,7 +74,6 @@ int main (void)
 		   	strncat(ev_path, file_ent->d_name, sizeof(ev_root) + NAME_MAX);
 			
 			fds[fd_num].events = POLLIN;
-			// TODO: test performance ipact of O_NONBLOCK
 			fds[fd_num].fd = open(ev_path, O_RDONLY | O_NONBLOCK);
 			if (!fds[fd_num].fd) die();
 
@@ -84,7 +92,7 @@ int main (void)
 	ssize_t rb; // Read bits
 
 	/* Prepare for using epoll */
-	#ifdef __linux__
+	#if OS == linux
 	struct epoll_event epoll_read_ev;
 	epoll_read_ev.events = EPOLLIN;
 	int ev_fd = epoll_create(1);
@@ -94,20 +102,19 @@ int main (void)
 			die();
 	#endif
 
-	// TODO: optimize the loop with an O(1) call as it runs for every
-	// event, some of those are in the previous comment
 	for (;;) {
 		
 		// TODO: better error reporting	
 		/* On linux use epoll(2) as it gives better performance */
-		#ifdef __linux__
+		#if OS == linux
 		static struct epoll_event ev_type;
 		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) == -1 || term)
 			break;
 		
+		// TODO: use and test kqueue(2) for BSD systems
 		/* On other systems use poll(2) to wait por a file dscriptor 
 		 * to become ready for reading. */
-		#else
+		#elif OS == unix
 		if (poll(fds, fd_num, -1) != -1 || term)
 			break;
 		#endif
@@ -117,9 +124,9 @@ int main (void)
 		
 		prev_size = pb.size;
 		for (i = 0; i < fd_num; i++) {
-			#ifdef __linux__
+			#if OS == linux
 			if (ev_type.events == EPOLLIN) {
-			#else
+			#elif OS == unix
 			if (fds[i].revents == fds[i].events) {
 			#endif
 
@@ -149,16 +156,20 @@ int main (void)
 			}
 		}
 	
-		// TODO: use fork and execl(3) to run the appropriate scripts
 		if (pb.size != prev_size) {
 			printf("Pressed keys: ");
 			for (int i = 0; i < pb.size; i++)
 				printf("%d ", pb.buf[i]);
 			putchar('\n');
+			if (pb.size == 2)
+				if (pb.buf[0] == 56 || pb.buf[0] == 31)
+					if (pb.buf[1] == 31 || pb.buf[1] == 56)
+						execCommand("/home/ale/hello");
 		}
 
 	}
 
+	// TODO: kill all running children before exiting
 	free(pb.buf);
 	if (!term)
 		fputs("An error occured\n", stderr);
@@ -218,12 +229,28 @@ int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
 	return 1;
 }
 
-void termHandler (int signum) {
+void termHandler (int signum)
+{
 	fputs("Received interrupt signal, exiting gracefully...\n", stderr);
 	term = 1;
 }
 
-void die (void) {
+void die (void)
+{
 	fputs(strerror(errno), stderr);
 	exit(errno);
+}
+
+void execCommand (const char *path)
+{
+	pid_t child_pid = fork();
+	if (child_pid == -1) die();
+	// TODO: communication between parent and child about process status/errors/etc
+	if (!child_pid) {
+		/* we are the child */
+		int ret = 0;
+		ret = execl(path, path, (char *) NULL);
+		if (ret != 0) 
+				exit(-1);
+	}
 }
