@@ -55,32 +55,65 @@ int main (void)
 	action.sa_handler = termHandler;
 	sigaction(SIGINT, &action, NULL);
 
+	/* Open the event directory */
 	DIR *ev_dir = opendir(ev_root);
 	if (!ev_dir) die();
 
-	char ev_path[sizeof(ev_root) + NAME_MAX + 1];
-	struct dirent *file_ent;
-	void *tmp;
 	int fd_num = 0;
 	struct pollfd *fds = NULL;
-	while ((file_ent = readdir(ev_dir)) != NULL) {
-		if (file_ent->d_type == DT_CHR) {
-				
-			tmp = realloc(fds, sizeof(struct pollfd) * (fd_num + 1));
-			if (!tmp) die();
-			fds = tmp;
-			
-			strncpy(ev_path, ev_root, sizeof(ev_root) + NAME_MAX);
-		   	strncat(ev_path, file_ent->d_name, sizeof(ev_root) + NAME_MAX);
-			
-			fds[fd_num].events = POLLIN;
-			fds[fd_num].fd = open(ev_path, O_RDONLY | O_NONBLOCK);
-			if (!fds[fd_num].fd) die();
 
-			fd_num++;
+	for (;;) {
+		struct dirent *file_ent;
+		char ev_path[sizeof(ev_root) + NAME_MAX + 1];
+		void *tmp_p;
+		int tmp_fd;
+		unsigned char evtype_b[EV_MAX/8 + 1];
+		
+		if ((file_ent = readdir(ev_dir)) == NULL)
+			break;
+		/* Filter out non character devices */
+		if (file_ent->d_type != DT_CHR)
+			continue;
+			
+		/* Compose absolute path from relative */
+		strncpy(ev_path, ev_root, sizeof(ev_root) + NAME_MAX);
+	   	strncat(ev_path, file_ent->d_name, sizeof(ev_root) + NAME_MAX);
+
+		/* Open device and check if it can give key events otherwise ignore it */
+		tmp_fd = open(ev_path, O_RDONLY | O_NONBLOCK);
+		if (tmp_fd < 0) {
+			fprintf(stderr, "Could not open device %s\n", ev_path);
+			continue;
 		}
+		
+		if (ioctl(tmp_fd, EVIOCGBIT(0, EV_MAX), evtype_b) < 0) {
+			fprintf(stderr, "Could not read capabilities of device %s\n",
+				ev_path);
+			close(tmp_fd);
+			continue;
+		}
+	
+		if (!(*evtype_b & EV_KEY)) {
+			fprintf(stderr, "Ignoring device %s\n", ev_path);
+			close(tmp_fd);
+			continue;
+		}
+
+		tmp_p = realloc(fds, sizeof(struct pollfd) * (fd_num + 1));
+		if (!tmp_p)
+			die();
+		fds = tmp_p;
+		
+		fds[fd_num].events = POLLIN;
+		fds[fd_num].fd = tmp_fd;
+
+		fd_num++;
 	}
 	closedir(ev_dir);
+	if (!fd_num) {
+		fputs("Could not open any device, exiting\n", stderr);
+		exit(-1);
+	}
 	// TODO: watch for events inside /dev/input and reload accordingly
 	// could use the epoll syscall or the inotify API (linux), 
 	// event API (openbsd), kqueue syscall (BSD and macos), a separate
@@ -96,9 +129,10 @@ int main (void)
 	struct epoll_event epoll_read_ev;
 	epoll_read_ev.events = EPOLLIN;
 	int ev_fd = epoll_create(1);
-	if (ev_fd == -1) die();
+	if (ev_fd < 0)
+			die();
 	for (int i = 0; i < fd_num; i++)
-		if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) == -1)
+		if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) < 0)
 			die();
 	#endif
 
@@ -114,7 +148,7 @@ int main (void)
 		// TODO: use and test kqueue(2) for BSD systems
 		/* On other systems use poll(2) to wait por a file dscriptor 
 		 * to become ready for reading. */
-		#elif OS == unix
+		#else // TODO: add unix and bsd cases
 		if (poll(fds, fd_num, -1) != -1 || term)
 			break;
 		#endif
@@ -126,7 +160,7 @@ int main (void)
 		for (i = 0; i < fd_num; i++) {
 			#if OS == linux
 			if (ev_type.events == EPOLLIN) {
-			#elif OS == unix
+			#else // TODO: add unix and bsd cases
 			if (fds[i].revents == fds[i].events) {
 			#endif
 
