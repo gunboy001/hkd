@@ -15,6 +15,8 @@
 /* Signaling */
 #include <signal.h>
 
+#define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
+
 /* Determine dependencies based on platform */
 #ifdef __linux__
 	#define OS linux
@@ -57,7 +59,8 @@ int main (void)
 
 	/* Open the event directory */
 	DIR *ev_dir = opendir(ev_root);
-	if (!ev_dir) die();
+	if (!ev_dir) 
+		die();
 
 	int fd_num = 0;
 	struct pollfd *fds = NULL;
@@ -67,7 +70,7 @@ int main (void)
 		char ev_path[sizeof(ev_root) + NAME_MAX + 1];
 		void *tmp_p;
 		int tmp_fd;
-		unsigned char evtype_b[EV_MAX/8 + 1];
+		unsigned char evtype_b[EV_MAX];
 		
 		if ((file_ent = readdir(ev_dir)) == NULL)
 			break;
@@ -85,15 +88,16 @@ int main (void)
 			fprintf(stderr, "Could not open device %s\n", ev_path);
 			continue;
 		}
-		
+
+		memset(evtype_b, 0, sizeof(evtype_b));
 		if (ioctl(tmp_fd, EVIOCGBIT(0, EV_MAX), evtype_b) < 0) {
 			fprintf(stderr, "Could not read capabilities of device %s\n",
 				ev_path);
 			close(tmp_fd);
 			continue;
 		}
-	
-		if (!(*evtype_b & EV_KEY)) {
+
+		if (!test_bit(EV_KEY, evtype_b)) {
 			fprintf(stderr, "Ignoring device %s\n", ev_path);
 			close(tmp_fd);
 			continue;
@@ -154,7 +158,7 @@ int main (void)
 		#endif
 		
 		static int i;
-		static int prev_size;
+		static unsigned int prev_size;
 		
 		prev_size = pb.size;
 		for (i = 0; i < fd_num; i++) {
@@ -192,7 +196,7 @@ int main (void)
 	
 		if (pb.size != prev_size) {
 			printf("Pressed keys: ");
-			for (int i = 0; i < pb.size; i++)
+			for (unsigned int i = 0; i < pb.size; i++)
 				printf("%d ", pb.buf[i]);
 			putchar('\n');
 			if (pb.size == 2)
@@ -222,7 +226,7 @@ int pressBufferAdd (struct pressed_buffer *pb, unsigned short key)
 	if (!pb) return 1;
 	if (pb->buf != NULL) {
 		/* Linear search if the key is already buffered */
-		for (int i = 0; i < pb->size; i++)
+		for (unsigned int i = 0; i < pb->size; i++)
 			if (key == pb->buf[i]) return 1;
 	}
 	
@@ -244,7 +248,7 @@ int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
  * non zero in case of failure (key not present or buffer empty). */
 	if (!pb) return 1;
 	
-	for (int i = 0; i < pb->size; i++) {
+	for (unsigned int i = 0; i < pb->size; i++) {
 		if (pb->buf[i] == key) {
 			pb->size--;
 			pb->buf[i] = pb->buf[pb->size];
