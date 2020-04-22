@@ -14,6 +14,8 @@
 #include <poll.h>
 /* Signaling */
 #include <signal.h>
+/* Process wait */
+#include <sys/wait.h>
 
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
 
@@ -30,8 +32,6 @@
 #ifndef OS
 	#define OS unix
 #endif
-
-// TODO: add children linked list structure and methods
 
 struct pressed_buffer {
 	unsigned short *buf;
@@ -206,8 +206,8 @@ int main (void)
 		}
 
 	}
-
-	// TODO: kill all running children before exiting
+	
+	wait(NULL);
 	free(pb.buf);
 	if (!term)
 		fputs("An error occured\n", stderr);
