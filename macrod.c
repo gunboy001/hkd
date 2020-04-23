@@ -41,12 +41,12 @@ struct key_buffer {
 int term = 0; // exit flag
 const char ev_root[] = "/dev/input/";
 
-//int reloadFileDescriptors
 int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
 void int_handler (int signum);
 void die (const char *, int);
 void exec_command(const char *);
+void update_descriptors_list (struct pollfd **, int *);
 
 // TODO: use getopts() to parse command line options
 int main (void)
@@ -58,63 +58,10 @@ int main (void)
 	action.sa_handler = int_handler;
 	sigaction(SIGINT, &action, NULL);
 
-	/* Open the event directory */
-	DIR *ev_dir = opendir(ev_root);
-	if (!ev_dir)
-		die("opendir", errno);
-
 	int fd_num = 0;
 	struct pollfd *fds = NULL;
+	update_descriptors_list(&fds, &fd_num);
 
-	for (;;) {
-		struct dirent *file_ent;
-		char ev_path[sizeof(ev_root) + NAME_MAX + 1];
-		void *tmp_p;
-		int tmp_fd;
-		unsigned char evtype_b[EV_MAX];
-
-		if ((file_ent = readdir(ev_dir)) == NULL)
-			break;
-		/* Filter out non character devices */
-		if (file_ent->d_type != DT_CHR)
-			continue;
-
-		/* Compose absolute path from relative */
-		strncpy(ev_path, ev_root, sizeof(ev_root) + NAME_MAX);
-	   	strncat(ev_path, file_ent->d_name, sizeof(ev_root) + NAME_MAX);
-
-		/* Open device and check if it can give key events otherwise ignore it */
-		tmp_fd = open(ev_path, O_RDONLY | O_NONBLOCK);
-		if (tmp_fd < 0) {
-			fprintf(stderr, "Could not open device %s\n", ev_path);
-			continue;
-		}
-
-		memset(evtype_b, 0, sizeof(evtype_b));
-		if (ioctl(tmp_fd, EVIOCGBIT(0, EV_MAX), evtype_b) < 0) {
-			fprintf(stderr, "Could not read capabilities of device %s\n",
-				ev_path);
-			close(tmp_fd);
-			continue;
-		}
-
-		if (!test_bit(EV_KEY, evtype_b)) {
-			fprintf(stderr, "Ignoring device %s\n", ev_path);
-			close(tmp_fd);
-			continue;
-		}
-
-		tmp_p = realloc(fds, sizeof(struct pollfd) * (fd_num + 1));
-		if (!tmp_p)
-			die("realloc file descriptors", errno);
-		fds = tmp_p;
-
-		fds[fd_num].events = POLLIN;
-		fds[fd_num].fd = tmp_fd;
-
-		fd_num++;
-	}
-	closedir(ev_dir);
 	if (!fd_num) {
 		fputs("Could not open any device, exiting\n", stderr);
 		exit(-1);
@@ -293,4 +240,65 @@ void exec_command (const char *path)
 			break;
 	}
 	// TODO: communication between parent and child about process status/errors/etc
+}
+
+void update_descriptors_list (struct pollfd **fds, int *fd_num)
+{
+	struct dirent *file_ent;
+	char ev_path[sizeof(ev_root) + NAME_MAX + 1];
+	void *tmp_p;
+	int tmp_fd;
+	unsigned char evtype_b[EV_MAX];
+	/* Open the event directory */
+	DIR *ev_dir = opendir(ev_root);
+	if (!ev_dir)
+		die("opendir", errno);
+
+	(*fd_num) = 0;
+	if ((*fds))
+		free(fds);
+
+	for (;;) {
+
+		if ((file_ent = readdir(ev_dir)) == NULL)
+			break;
+		/* Filter out non character devices */
+		if (file_ent->d_type != DT_CHR)
+			continue;
+
+		/* Compose absolute path from relative */
+		strncpy(ev_path, ev_root, sizeof(ev_root) + NAME_MAX);
+	   	strncat(ev_path, file_ent->d_name, sizeof(ev_root) + NAME_MAX);
+
+		/* Open device and check if it can give key events otherwise ignore it */
+		tmp_fd = open(ev_path, O_RDONLY | O_NONBLOCK);
+		if (tmp_fd < 0) {
+			fprintf(stderr, "Could not open device %s\n", ev_path);
+			continue;
+		}
+
+		memset(evtype_b, 0, sizeof(evtype_b));
+		if (ioctl(tmp_fd, EVIOCGBIT(0, EV_MAX), evtype_b) < 0) {
+			fprintf(stderr, "Could not read capabilities of device %s\n",
+				ev_path);
+			close(tmp_fd);
+			continue;
+		}
+
+		if (!test_bit(EV_KEY, evtype_b)) {
+			fprintf(stderr, "Ignoring device %s\n", ev_path);
+			close(tmp_fd);
+			continue;
+		}
+
+		tmp_p = realloc((*fds), sizeof(struct pollfd) * ((*fd_num) + 1));
+		if (!tmp_p)
+			die("realloc file descriptors", errno);
+		(*fds) = tmp_p;
+
+		(*fds)[(*fd_num)].events = POLLIN;
+		(*fds)[(*fd_num)].fd = tmp_fd;
+		(*fd_num)++;
+	}
+	closedir(ev_dir);
 }
