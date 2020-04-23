@@ -44,7 +44,7 @@ const char ev_root[] = "/dev/input/";
 int pressBufferAdd (struct pressed_buffer*, unsigned short);
 int pressBufferRemove (struct pressed_buffer*, unsigned short);
 void termHandler (int signum);
-void die (void);
+void die (const char *, int);
 void execCommand(const char *);
 
 // TODO: use getopts() to parse command line options
@@ -60,7 +60,7 @@ int main (void)
 	/* Open the event directory */
 	DIR *ev_dir = opendir(ev_root);
 	if (!ev_dir)
-		die();
+		die("opendir", errno);
 
 	int fd_num = 0;
 	struct pollfd *fds = NULL;
@@ -105,7 +105,7 @@ int main (void)
 
 		tmp_p = realloc(fds, sizeof(struct pollfd) * (fd_num + 1));
 		if (!tmp_p)
-			die();
+			die("realloc file descriptors", errno);
 		fds = tmp_p;
 
 		fds[fd_num].events = POLLIN;
@@ -134,10 +134,10 @@ int main (void)
 	epoll_read_ev.events = EPOLLIN;
 	int ev_fd = epoll_create(1);
 	if (ev_fd < 0)
-			die();
+		die("epoll_create", errno);
 	for (int i = 0; i < fd_num; i++)
 		if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) < 0)
-			die();
+			die("epoll_ctl", errno);
 	#endif
 
 	for (;;) {
@@ -214,7 +214,8 @@ int main (void)
 	if (!term)
 		fputs("An error occured\n", stderr);
 	for (int i = 0; i < fd_num; i++) {
-			if (close(fds[i].fd) == -1) die();
+		if (close(fds[i].fd) == -1)
+			die("close file descriptors", errno);
 	}
 	return 0;
 }
@@ -234,10 +235,8 @@ int pressBufferAdd (struct pressed_buffer *pb, unsigned short key)
 
 	unsigned short *b;
 		b = realloc(pb->buf, sizeof(unsigned short) * (pb->size + 1));
-	if (!b) {
-		fprintf(stderr, "realloc failed in pressBufferAdd: %s", strerror(errno));
-		exit(errno);
-	}
+	if (!b)
+		die("realloc failed in pressBufferAdd", errno);
 	pb->buf = b;
 	pb->buf[pb->size++] = key;
 
@@ -257,11 +256,8 @@ int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
 			unsigned short *b;
 			b = realloc(pb->buf, sizeof(unsigned short) * pb->size);
 			/* if realloc failed but the buffer is populated throw an error */
-			if (!b && pb->size) {
-				fprintf(stderr, "realloc failed in pressBufferRemove: %s",
-					strerror(errno));
-				exit(errno);
-			}
+			if (!b && pb->size)
+				die("realloc failed in pressBufferRemove: %s", errno);
 			pb->buf = b;
 			return 0;
 		}
@@ -275,17 +271,17 @@ void termHandler (int signum)
 	term = 1;
 }
 
-void die (void)
+void die (const char *msg, int err)
 {
-	fputs(strerror(errno), stderr);
-	exit(errno);
+	fprintf(stderr, "%s: %s", msg != NULL ? msg : "error", err ? strerror(err): "exiting");
+	exit(err);
 }
 
 void execCommand (const char *path)
 {
 	switch (fork()) {
 		case -1:
-			fprintf(stderr, "Could not fork: %s", strerror(errno));
+			die("Could not fork: %s", errno);
 			break;
 		case 0:
 			/* we are the child */
