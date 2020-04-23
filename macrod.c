@@ -24,7 +24,7 @@
 	#define OS linux
 	#include <linux/input.h>
 	#include <sys/epoll.h>
-#endif 
+#endif
 #ifdef __FreeBSD__
 	#define OS bsd
 	#include <dev/evdev/input.h>
@@ -59,7 +59,7 @@ int main (void)
 
 	/* Open the event directory */
 	DIR *ev_dir = opendir(ev_root);
-	if (!ev_dir) 
+	if (!ev_dir)
 		die();
 
 	int fd_num = 0;
@@ -71,13 +71,13 @@ int main (void)
 		void *tmp_p;
 		int tmp_fd;
 		unsigned char evtype_b[EV_MAX];
-		
+
 		if ((file_ent = readdir(ev_dir)) == NULL)
 			break;
 		/* Filter out non character devices */
 		if (file_ent->d_type != DT_CHR)
 			continue;
-			
+
 		/* Compose absolute path from relative */
 		strncpy(ev_path, ev_root, sizeof(ev_root) + NAME_MAX);
 	   	strncat(ev_path, file_ent->d_name, sizeof(ev_root) + NAME_MAX);
@@ -107,7 +107,7 @@ int main (void)
 		if (!tmp_p)
 			die();
 		fds = tmp_p;
-		
+
 		fds[fd_num].events = POLLIN;
 		fds[fd_num].fd = tmp_fd;
 
@@ -119,13 +119,13 @@ int main (void)
 		exit(-1);
 	}
 	// TODO: watch for events inside /dev/input and reload accordingly
-	// could use the epoll syscall or the inotify API (linux), 
+	// could use the epoll syscall or the inotify API (linux),
 	// event API (openbsd), kqueue syscall (BSD and macos), a separate
 	// process or some polling system inside the main loop to maintain
 	// portability across other *NIX derivatives, could also use libev
 
 	struct input_event event;
-	struct pressed_buffer pb = {NULL, 0}; // Pressed keys buffer	
+	struct pressed_buffer pb = {NULL, 0}; // Pressed keys buffer
 	ssize_t rb; // Read bits
 
 	/* Prepare for using epoll */
@@ -141,25 +141,25 @@ int main (void)
 	#endif
 
 	for (;;) {
-		
-		// TODO: better error reporting	
+
+		// TODO: better error reporting
 		/* On linux use epoll(2) as it gives better performance */
 		#if OS == linux
 		static struct epoll_event ev_type;
 		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) == -1 || term)
 			break;
-		
+
 		// TODO: use and test kqueue(2) for BSD systems
-		/* On other systems use poll(2) to wait por a file dscriptor 
+		/* On other systems use poll(2) to wait por a file dscriptor
 		 * to become ready for reading. */
 		#else // TODO: add unix and bsd cases
 		if (poll(fds, fd_num, -1) != -1 || term)
 			break;
 		#endif
-		
+
 		static int i;
 		static unsigned int prev_size;
-		
+
 		prev_size = pb.size;
 		for (i = 0; i < fd_num; i++) {
 			#if OS == linux
@@ -193,7 +193,7 @@ int main (void)
 				}
 			}
 		}
-	
+
 		if (pb.size != prev_size) {
 			printf("Pressed keys: ");
 			for (unsigned int i = 0; i < pb.size; i++)
@@ -206,7 +206,9 @@ int main (void)
 		}
 
 	}
-	
+
+	// TODO: better child handling, for now all children receive the same
+	// interrupts as the father so everything should work fine for now
 	wait(NULL);
 	free(pb.buf);
 	if (!term)
@@ -220,16 +222,16 @@ int main (void)
 // TODO: optimize functions to preallocate some memory
 int pressBufferAdd (struct pressed_buffer *pb, unsigned short key)
 {
-/* Adds a keycode to the pressed buffer if it is not already present 
+/* Adds a keycode to the pressed buffer if it is not already present
  * Returns non zero if the key was not added. */
-	
+
 	if (!pb) return 1;
 	if (pb->buf != NULL) {
 		/* Linear search if the key is already buffered */
 		for (unsigned int i = 0; i < pb->size; i++)
 			if (key == pb->buf[i]) return 1;
 	}
-	
+
 	unsigned short *b;
 		b = realloc(pb->buf, sizeof(unsigned short) * (pb->size + 1));
 	if (!b) {
@@ -244,10 +246,10 @@ int pressBufferAdd (struct pressed_buffer *pb, unsigned short key)
 
 int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
 {
-/* Removes a keycode from a pressed buffer if it is present returns 
+/* Removes a keycode from a pressed buffer if it is present returns
  * non zero in case of failure (key not present or buffer empty). */
 	if (!pb) return 1;
-	
+
 	for (unsigned int i = 0; i < pb->size; i++) {
 		if (pb->buf[i] == key) {
 			pb->size--;
@@ -288,7 +290,7 @@ void execCommand (const char *path)
 		/* we are the child */
 		int ret = 0;
 		ret = execl(path, path, (char *) NULL);
-		if (ret != 0) 
+		if (ret != 0)
 				exit(-1);
 	}
 }
