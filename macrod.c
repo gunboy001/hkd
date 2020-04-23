@@ -256,9 +256,10 @@ int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
 			pb->buf[i] = pb->buf[pb->size];
 			unsigned short *b;
 			b = realloc(pb->buf, sizeof(unsigned short) * pb->size);
+			/* if realloc failed but the buffer is populated throw an error */
 			if (!b && pb->size) {
 				fprintf(stderr, "realloc failed in pressBufferRemove: %s",
-							strerror(errno));
+					strerror(errno));
 				exit(errno);
 			}
 			pb->buf = b;
