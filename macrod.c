@@ -265,7 +265,6 @@ int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
 			return 0;
 		}
 	}
-
 	return 1;
 }
 
@@ -283,14 +282,18 @@ void die (void)
 
 void execCommand (const char *path)
 {
-	pid_t child_pid = fork();
-	if (child_pid == -1) die();
-	// TODO: communication between parent and child about process status/errors/etc
-	if (!child_pid) {
-		/* we are the child */
-		int ret = 0;
-		ret = execl(path, path, (char *) NULL);
-		if (ret != 0)
+	switch (fork()) {
+		case -1:
+			fprintf(stderr, "Could not fork: %s", strerror(errno));
+			break;
+		case 0:
+			/* we are the child */
+			if(execl(path, path, (char *) NULL) != 0)
+				/* execl only returns if an error occured, so we exit
+				 * otherwise we duplicate the process */
 				exit(-1);
+			/* we shouldn't be here */
+			break;
 	}
+	// TODO: communication between parent and child about process status/errors/etc
 }
