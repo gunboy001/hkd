@@ -33,7 +33,7 @@
 	#define OS unix
 #endif
 
-struct pressed_buffer {
+struct key_buffer {
 	unsigned short *buf;
 	unsigned int size;
 };
@@ -41,11 +41,12 @@ struct pressed_buffer {
 int term = 0; // exit flag
 const char ev_root[] = "/dev/input/";
 
-int pressBufferAdd (struct pressed_buffer*, unsigned short);
-int pressBufferRemove (struct pressed_buffer*, unsigned short);
-void termHandler (int signum);
+//int reloadFileDescriptors
+int key_buffer_add (struct key_buffer*, unsigned short);
+int key_buffer_remove (struct key_buffer*, unsigned short);
+void int_handler (int signum);
 void die (const char *, int);
-void execCommand(const char *);
+void exec_command(const char *);
 
 // TODO: use getopts() to parse command line options
 int main (void)
@@ -54,7 +55,7 @@ int main (void)
 	term = 0;
 	struct sigaction action;
 	memset(&action, 0, sizeof(action));
-	action.sa_handler = termHandler;
+	action.sa_handler = int_handler;
 	sigaction(SIGINT, &action, NULL);
 
 	/* Open the event directory */
@@ -125,11 +126,10 @@ int main (void)
 	// portability across other *NIX derivatives, could also use libev
 
 	struct input_event event;
-	struct pressed_buffer pb = {NULL, 0}; // Pressed keys buffer
+	struct key_buffer pb = {NULL, 0}; // Pressed keys buffer
 	ssize_t rb; // Read bits
 
-	/* Prepare for using epoll */
-	#if OS == linux
+#if OS == linux
 	struct epoll_event epoll_read_ev;
 	epoll_read_ev.events = EPOLLIN;
 	int ev_fd = epoll_create(1);
@@ -138,13 +138,13 @@ int main (void)
 	for (int i = 0; i < fd_num; i++)
 		if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) < 0)
 			die("epoll_ctl", errno);
-	#endif
+#endif 	/* Prepare for using epoll */
 
 	for (;;) {
 
 		// TODO: better error reporting
 		/* On linux use epoll(2) as it gives better performance */
-		#if OS == linux
+#if OS == linux
 		static struct epoll_event ev_type;
 		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) == -1 || term)
 			break;
@@ -152,21 +152,21 @@ int main (void)
 		// TODO: use and test kqueue(2) for BSD systems
 		/* On other systems use poll(2) to wait por a file dscriptor
 		 * to become ready for reading. */
-		#else // TODO: add unix and bsd cases
+#else // TODO: add unix and bsd cases
 		if (poll(fds, fd_num, -1) != -1 || term)
 			break;
-		#endif
+#endif
 
 		static int i;
 		static unsigned int prev_size;
 
 		prev_size = pb.size;
 		for (i = 0; i < fd_num; i++) {
-			#if OS == linux
+#if OS == linux
 			if (ev_type.events == EPOLLIN) {
-			#else // TODO: add unix and bsd cases
+#else // TODO: add unix and bsd cases
 			if (fds[i].revents == fds[i].events) {
-			#endif
+#endif
 
 				rb = read(fds[i].fd, &event, sizeof(struct input_event));
 				if (rb != sizeof(struct input_event)) continue;
@@ -174,20 +174,20 @@ int main (void)
 				/* Ignore touchpad events */
 				// TODO: make a event blacklist system
 				if (
-						event.type == EV_KEY &&
-					   	event.code != BTN_TOUCH &&
-					   	event.code != BTN_TOOL_FINGER &&
-						event.code != BTN_TOOL_DOUBLETAP &&
-						event.code != BTN_TOOL_TRIPLETAP
+					event.type == EV_KEY &&
+					event.code != BTN_TOUCH &&
+					event.code != BTN_TOOL_FINGER &&
+					event.code != BTN_TOOL_DOUBLETAP &&
+					event.code != BTN_TOOL_TRIPLETAP
 					) {
 					switch (event.value) {
 						/* Key released */
 						case (0):
-							pressBufferRemove(&pb, event.code);
+							key_buffer_remove(&pb, event.code);
 							break;
 						/* Key pressed */
 						case (1):
-							pressBufferAdd(&pb, event.code);
+							key_buffer_add(&pb, event.code);
 							break;
 					}
 				}
@@ -202,7 +202,7 @@ int main (void)
 			if (pb.size == 2)
 				if (pb.buf[0] == 56 || pb.buf[0] == 31)
 					if (pb.buf[1] == 31 || pb.buf[1] == 56)
-						execCommand("/home/ale/hello");
+						exec_command("/home/ale/hello");
 		}
 
 	}
@@ -221,7 +221,7 @@ int main (void)
 }
 
 // TODO: optimize functions to preallocate some memory
-int pressBufferAdd (struct pressed_buffer *pb, unsigned short key)
+int key_buffer_add (struct key_buffer *pb, unsigned short key)
 {
 /* Adds a keycode to the pressed buffer if it is not already present
  * Returns non zero if the key was not added. */
@@ -236,14 +236,14 @@ int pressBufferAdd (struct pressed_buffer *pb, unsigned short key)
 	unsigned short *b;
 		b = realloc(pb->buf, sizeof(unsigned short) * (pb->size + 1));
 	if (!b)
-		die("realloc failed in pressBufferAdd", errno);
+		die("realloc failed in key_buffer_add", errno);
 	pb->buf = b;
 	pb->buf[pb->size++] = key;
 
 	return 0;
 }
 
-int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
+int key_buffer_remove (struct key_buffer *pb, unsigned short key)
 {
 /* Removes a keycode from a pressed buffer if it is present returns
  * non zero in case of failure (key not present or buffer empty). */
@@ -257,7 +257,7 @@ int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
 			b = realloc(pb->buf, sizeof(unsigned short) * pb->size);
 			/* if realloc failed but the buffer is populated throw an error */
 			if (!b && pb->size)
-				die("realloc failed in pressBufferRemove: %s", errno);
+				die("realloc failed in key_buffer_remove: %s", errno);
 			pb->buf = b;
 			return 0;
 		}
@@ -265,7 +265,7 @@ int pressBufferRemove (struct pressed_buffer *pb, unsigned short key)
 	return 1;
 }
 
-void termHandler (int signum)
+void int_handler (int signum)
 {
 	fputs("Received interrupt signal, exiting gracefully...\n", stderr);
 	term = 1;
@@ -277,7 +277,7 @@ void die (const char *msg, int err)
 	exit(err);
 }
 
-void execCommand (const char *path)
+void exec_command (const char *path)
 {
 	switch (fork()) {
 		case -1:
