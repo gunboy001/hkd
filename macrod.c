@@ -17,6 +17,14 @@
 /* Process wait */
 #include <sys/wait.h>
 
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_YELLOW  "\x1b[33m"
+#define ANSI_COLOR_BLUE    "\x1b[34m"
+#define ANSI_COLOR_MAGENTA "\x1b[35m"
+#define ANSI_COLOR_CYAN    "\x1b[36m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
+
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
 
 /* Determine dependencies based on platform */
@@ -214,13 +222,16 @@ int key_buffer_remove (struct key_buffer *pb, unsigned short key)
 
 void int_handler (int signum)
 {
-	fputs("Received interrupt signal, exiting gracefully...\n", stderr);
+	fprintf(stderr, ANSI_COLOR_YELLOW
+		"Received interrupt signal, exiting gracefully...\n" ANSI_COLOR_RESET);
 	term = 1;
 }
 
 void die (const char *msg, int err)
 {
-	fprintf(stderr, "%s: %s", msg != NULL ? msg : "error", err ? strerror(err): "exiting");
+	fprintf(stderr,
+		ANSI_COLOR_RED "%s: %s" ANSI_COLOR_RESET,
+		msg != NULL ? msg : "error", err ? strerror(err): "exiting");
 	exit(err);
 }
 
@@ -273,20 +284,24 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 		/* Open device and check if it can give key events otherwise ignore it */
 		tmp_fd = open(ev_path, O_RDONLY | O_NONBLOCK);
 		if (tmp_fd < 0) {
-			fprintf(stderr, "Could not open device %s\n", ev_path);
+			fprintf(stderr,
+				ANSI_COLOR_RED "Could not open device %s\n"
+				ANSI_COLOR_RESET, ev_path);
 			continue;
 		}
 
 		memset(evtype_b, 0, sizeof(evtype_b));
 		if (ioctl(tmp_fd, EVIOCGBIT(0, EV_MAX), evtype_b) < 0) {
-			fprintf(stderr, "Could not read capabilities of device %s\n",
-				ev_path);
+			fprintf(stderr,ANSI_COLOR_RED
+				"Could not read capabilities of device %s\n"
+				ANSI_COLOR_RESET,ev_path);
 			close(tmp_fd);
 			continue;
 		}
 
 		if (!test_bit(EV_KEY, evtype_b)) {
-			fprintf(stderr, "Ignoring device %s\n", ev_path);
+			fprintf(stderr, ANSI_COLOR_YELLOW "Ignoring device %s\n"
+				ANSI_COLOR_RESET, ev_path);
 			close(tmp_fd);
 			continue;
 		}
@@ -300,6 +315,6 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 		(*fds)[(*fd_num)].fd = tmp_fd;
 		(*fd_num)++;
 	}
-	fprintf(stderr, "Monitoring %d devices\n", (*fd_num));
+	fprintf(stderr,ANSI_COLOR_YELLOW "Monitoring %d devices\n" ANSI_COLOR_RESET, (*fd_num));
 	closedir(ev_dir);
 }
