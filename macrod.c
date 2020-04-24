@@ -39,7 +39,7 @@ struct key_buffer {
 };
 
 int term = 0; // exit flag
-const char ev_root[] = "/dev/input/";
+const char evdev_root_dir[] = "/dev/input/";
 
 int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
@@ -245,12 +245,12 @@ void exec_command (const char *path)
 void update_descriptors_list (struct pollfd **fds, int *fd_num)
 {
 	struct dirent *file_ent;
-	char ev_path[sizeof(ev_root) + NAME_MAX + 1];
+	char ev_path[sizeof(evdev_root_dir) + NAME_MAX + 1];
 	void *tmp_p;
 	int tmp_fd;
 	unsigned char evtype_b[EV_MAX];
 	/* Open the event directory */
-	DIR *ev_dir = opendir(ev_root);
+	DIR *ev_dir = opendir(evdev_root_dir);
 	if (!ev_dir)
 		die("opendir", errno);
 
@@ -267,8 +267,8 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 			continue;
 
 		/* Compose absolute path from relative */
-		strncpy(ev_path, ev_root, sizeof(ev_root) + NAME_MAX);
-	   	strncat(ev_path, file_ent->d_name, sizeof(ev_root) + NAME_MAX);
+		strncpy(ev_path, evdev_root_dir, sizeof(evdev_root_dir) + NAME_MAX);
+	   	strncat(ev_path, file_ent->d_name, sizeof(evdev_root_dir) + NAME_MAX);
 
 		/* Open device and check if it can give key events otherwise ignore it */
 		tmp_fd = open(ev_path, O_RDONLY | O_NONBLOCK);
@@ -300,5 +300,6 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 		(*fds)[(*fd_num)].fd = tmp_fd;
 		(*fd_num)++;
 	}
+	fprintf(stderr, "Monitoring %d devices\n", (*fd_num));
 	closedir(ev_dir);
 }
