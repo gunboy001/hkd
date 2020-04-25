@@ -1,12 +1,12 @@
 CC = gcc
 CFLAGS = -Wall -Werror -pedantic -O2
 
-macrod: macrod.o
+hkd: hkd.o
 
 debug:
-	gcc $(CFLAGS) -g macrod.c -o macrod_debug
+	gcc $(CFLAGS) -g hkd.c -o hkd_debug
 
-macrod.o: macrod.c
+hkd.o: hkd.c
 
 clean:
-	rm macrod *.o macrod_debug 2> /dev/null
+	rm *.o hkd hkd_debug 2> /dev/null
