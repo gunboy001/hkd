@@ -51,6 +51,7 @@ const char evdev_root_dir[] = "/dev/input/";
 
 int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
+int convert_key_value (unsigned short);
 void int_handler (int signum);
 void die (const char *, int);
 void exec_command(const char *);
@@ -136,14 +137,14 @@ int main (void)
 					event.code != BTN_TOOL_TRIPLETAP
 					) {
 					switch (event.value) {
-						/* Key released */
-						case (0):
-							key_buffer_remove(&pb, event.code);
-							break;
-						/* Key pressed */
-						case (1):
-							key_buffer_add(&pb, event.code);
-							break;
+					/* Key released */
+					case (0):
+						key_buffer_remove(&pb, event.code);
+						break;
+					/* Key pressed */
+					case (1):
+						key_buffer_add(&pb, event.code);
+						break;
 					}
 				}
 			}
@@ -154,10 +155,17 @@ int main (void)
 			for (unsigned int i = 0; i < pb.size; i++)
 				printf("%d ", pb.buf[i]);
 			putchar('\n');
-			if (pb.size == 2)
+			switch (pb.size) {
+			case 1:
+				/* You can use keys defined in input.h */
+				if (pb.buf[0] == KEY_MUTE)
+					exec_command("/home/ale/hello");
+			case 2:
 				if (pb.buf[0] == 56 || pb.buf[0] == 31)
 					if (pb.buf[1] == 31 || pb.buf[1] == 56)
 						exec_command("/home/ale/hello");
+				break;
+			}
 		}
 
 	}
@@ -238,17 +246,17 @@ void die (const char *msg, int err)
 void exec_command (const char *path)
 {
 	switch (fork()) {
-		case -1:
-			die("Could not fork: %s", errno);
-			break;
-		case 0:
-			/* we are the child */
-			if(execl(path, path, (char *) NULL) != 0)
-				/* execl only returns if an error occured, so we exit
-				 * otherwise we duplicate the process */
-				exit(-1);
-			/* we shouldn't be here */
-			break;
+	case -1:
+		die("Could not fork: %s", errno);
+		break;
+	case 0:
+		/* we are the child */
+		if(execl(path, path, (char *) NULL) != 0)
+			/* execl only returns if an error occured, so we exit
+			 * otherwise we duplicate the process */
+			exit(-1);
+		/* we shouldn't be here */
+		break;
 	}
 	// TODO: communication between parent and child about process status/errors/etc
 }
@@ -317,4 +325,10 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 	}
 	fprintf(stderr,ANSI_COLOR_YELLOW "Monitoring %d devices\n" ANSI_COLOR_RESET, (*fd_num));
 	closedir(ev_dir);
+}
+
+int convert_key_value (unsigned short key)
+{
+	int outchar = 0;
+	return outchar;
 }
