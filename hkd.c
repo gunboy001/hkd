@@ -198,7 +198,7 @@ int key_buffer_add (struct key_buffer *pb, unsigned short key)
 	}
 
 	unsigned short *b;
-		b = realloc(pb->buf, sizeof(unsigned short) * (pb->size + 1));
+		b = (unsigned short *) realloc(pb->buf, sizeof(unsigned short) * (pb->size + 1));
 	if (!b)
 		die("realloc failed in key_buffer_add", errno);
 	pb->buf = b;
@@ -218,7 +218,7 @@ int key_buffer_remove (struct key_buffer *pb, unsigned short key)
 			pb->size--;
 			pb->buf[i] = pb->buf[pb->size];
 			unsigned short *b;
-			b = realloc(pb->buf, sizeof(unsigned short) * pb->size);
+			b = (unsigned short *) realloc(pb->buf, sizeof(unsigned short) * pb->size);
 			/* if realloc failed but the buffer is populated throw an error */
 			if (!b && pb->size)
 				die("realloc failed in key_buffer_remove: %s", errno);
@@ -322,7 +322,7 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 		tmp_p = realloc((*fds), sizeof(struct pollfd) * ((*fd_num) + 1));
 		if (!tmp_p)
 			die("realloc file descriptors", errno);
-		(*fds) = tmp_p;
+		(*fds) = (struct pollfd *) tmp_p;
 
 		(*fds)[(*fd_num)].events = POLLIN;
 		(*fds)[(*fd_num)].fd = tmp_fd;
