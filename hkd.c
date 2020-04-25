@@ -54,7 +54,7 @@ int key_buffer_remove (struct key_buffer*, unsigned short);
 int convert_key_value (unsigned short);
 void int_handler (int signum);
 void die (const char *, int);
-void exec_command(const char *);
+void exec_command(char *);
 void update_descriptors_list (struct pollfd **, int *);
 
 // TODO: use getopts() to parse command line options
@@ -159,11 +159,12 @@ int main (void)
 			case 1:
 				/* You can use keys defined in input.h */
 				if (pb.buf[0] == KEY_MUTE)
-					exec_command("/home/ale/hello");
+					exec_command((char *)"/home/ale/hello");
+				break;
 			case 2:
 				if (pb.buf[0] == 56 || pb.buf[0] == 31)
 					if (pb.buf[1] == 31 || pb.buf[1] == 56)
-						exec_command("/home/ale/hello");
+						exec_command((char *)"/home/ale/hello");
 				break;
 			}
 		}
@@ -243,18 +244,22 @@ void die (const char *msg, int err)
 	exit(err);
 }
 
-void exec_command (const char *path)
+void exec_command (char *path)
 {
+	char *argv[] = {path, NULL};
 	switch (fork()) {
 	case -1:
 		die("Could not fork: %s", errno);
 		break;
 	case 0:
 		/* we are the child */
-		if(execl(path, path, (char *) NULL) != 0)
-			/* execl only returns if an error occured, so we exit
+		if(execv(path, argv) < 0) {
+			/* execv only returns if an error occured, so we exit
 			 * otherwise we duplicate the process */
+			fprintf(stderr, ANSI_COLOR_RED "Could not run %s\n" ANSI_COLOR_RESET
+			, path);
 			exit(-1);
+		}
 		/* we shouldn't be here */
 		break;
 	}
