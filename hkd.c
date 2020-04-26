@@ -253,7 +253,7 @@ void exec_command (char *path)
 		break;
 	case 0:
 		/* we are the child */
-		if(execv(path, argv) < 0) {
+		if(execvp(path, argv) < 0) {
 			/* execv only returns if an error occured, so we exit
 			 * otherwise we duplicate the process */
 			fprintf(stderr, ANSI_COLOR_RED "Could not run %s\n" ANSI_COLOR_RESET
