@@ -71,8 +71,16 @@ int main (void)
 	struct pollfd *fds = NULL;
 	update_descriptors_list(&fds, &fd_num);
 
-	if (!fd_num) {
-		fputs("Could not open any device, exiting\n", stderr);
+	if (fd_num) {
+		fprintf(stderr,
+			ANSI_COLOR_YELLOW 
+			"Monitoring %d devices\n"
+			ANSI_COLOR_RESET, fd_num);
+	} else {
+		fprintf(stderr,
+			ANSI_COLOR_RED
+			"Could not open any devices, exiting\n"
+			ANSI_COLOR_RESET);
 		exit(-1);
 	}
 	// TODO: watch for events inside /dev/input and reload accordingly
@@ -328,7 +336,6 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 		(*fds)[(*fd_num)].fd = tmp_fd;
 		(*fd_num)++;
 	}
-	fprintf(stderr,ANSI_COLOR_YELLOW "Monitoring %d devices\n" ANSI_COLOR_RESET, (*fd_num));
 	closedir(ev_dir);
 }
 
