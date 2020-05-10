@@ -14,3 +14,6 @@ hkd doesn't require any libraries and has no dependency other than a standard C
 library, `musl` should work.\
 run `make` to compile, `make clean` to remove the mess and `make debug` to compile
 a debug binary to use with gdb.
+
+## Similar projects
+[triggerhappy](https://github.com/wertarbyte/triggerhappy)
