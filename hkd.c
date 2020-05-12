@@ -25,6 +25,8 @@
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
+#define yellow(str) (ANSI_COLOR_YELLOW str ANSI_COLOR_RESET)
+#define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
 
 /* Determine dependencies based on platform */
@@ -72,15 +74,9 @@ int main (void)
 	update_descriptors_list(&fds, &fd_num);
 
 	if (fd_num) {
-		fprintf(stderr,
-			ANSI_COLOR_YELLOW 
-			"Monitoring %d devices\n"
-			ANSI_COLOR_RESET, fd_num);
+		fprintf(stderr, yellow("Monitoring %d devices\n"), fd_num);
 	} else {
-		fprintf(stderr,
-			ANSI_COLOR_RED
-			"Could not open any devices, exiting\n"
-			ANSI_COLOR_RESET);
+		fprintf(stderr, red("Could not open any devices, exiting\n"));
 		exit(-1);
 	}
 	// TODO: watch for events inside /dev/input and reload accordingly
@@ -93,7 +89,9 @@ int main (void)
 	struct key_buffer pb = {NULL, 0}; // Pressed keys buffer
 	ssize_t rb; // Read bits
 
+/* Prepare for epoll */
 #if OS == linux
+	fprintf(stderr, yellow("using epoll based polling\n"));
 	struct epoll_event epoll_read_ev;
 	epoll_read_ev.events = EPOLLIN;
 	int ev_fd = epoll_create(1);
@@ -102,10 +100,10 @@ int main (void)
 	for (int i = 0; i < fd_num; i++)
 		if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) < 0)
 			die("epoll_ctl", errno);
-#endif 	/* Prepare for using epoll */
+#endif
 
+	/* MAIN EVENT LOOP */
 	for (;;) {
-
 		// TODO: better error reporting
 		/* On linux use epoll(2) as it gives better performance */
 #if OS == linux
@@ -184,7 +182,7 @@ int main (void)
 	wait(NULL);
 	free(pb.buf);
 	if (!term)
-		fputs("An error occured\n", stderr);
+		fprintf(stderr, red("An error occured\n"));
 	for (int i = 0; i < fd_num; i++) {
 		if (close(fds[i].fd) == -1)
 			die("close file descriptors", errno);
@@ -239,16 +237,13 @@ int key_buffer_remove (struct key_buffer *pb, unsigned short key)
 
 void int_handler (int signum)
 {
-	fprintf(stderr, ANSI_COLOR_YELLOW
-		"Received interrupt signal, exiting gracefully...\n" ANSI_COLOR_RESET);
+	fprintf(stderr, yellow("Received interrupt signal, exiting gracefully...\n"));
 	term = 1;
 }
 
 void die (const char *msg, int err)
 {
-	fprintf(stderr,
-		ANSI_COLOR_RED "%s: %s" ANSI_COLOR_RESET,
-		msg != NULL ? msg : "error", err ? strerror(err): "exiting");
+	fprintf(stderr, red("%s: %s"), msg != NULL ? msg : "error", err ? strerror(err): "exiting");
 	exit(err);
 }
 
@@ -264,8 +259,7 @@ void exec_command (char *path)
 		if(execvp(path, argv) < 0) {
 			/* execv only returns if an error occured, so we exit
 			 * otherwise we duplicate the process */
-			fprintf(stderr, ANSI_COLOR_RED "Could not run %s\n" ANSI_COLOR_RESET
-			, path);
+			fprintf(stderr, red("Could not run %s\n"), path);
 			exit(-1);
 		}
 		/* we shouldn't be here */
@@ -305,24 +299,19 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 		/* Open device and check if it can give key events otherwise ignore it */
 		tmp_fd = open(ev_path, O_RDONLY | O_NONBLOCK);
 		if (tmp_fd < 0) {
-			fprintf(stderr,
-				ANSI_COLOR_RED "Could not open device %s\n"
-				ANSI_COLOR_RESET, ev_path);
+			fprintf(stderr, red("Could not open device %s\n"), ev_path);
 			continue;
 		}
 
 		memset(evtype_b, 0, sizeof(evtype_b));
 		if (ioctl(tmp_fd, EVIOCGBIT(0, EV_MAX), evtype_b) < 0) {
-			fprintf(stderr,ANSI_COLOR_RED
-				"Could not read capabilities of device %s\n"
-				ANSI_COLOR_RESET,ev_path);
+			fprintf(stderr, red("Could not read capabilities of device %s\n"),ev_path);
 			close(tmp_fd);
 			continue;
 		}
 
 		if (!test_bit(EV_KEY, evtype_b)) {
-			fprintf(stderr, ANSI_COLOR_YELLOW "Ignoring device %s\n"
-				ANSI_COLOR_RESET, ev_path);
+			fprintf(stderr, yellow("Ignoring device %s\n"), ev_path);
 			close(tmp_fd);
 			continue;
 		}
