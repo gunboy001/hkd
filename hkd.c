@@ -49,7 +49,6 @@ int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
 int convert_key_value (unsigned short);
 void int_handler (int signum);
-void die (const char *, int);
 void exec_command(char *);
 void update_descriptors_list (struct pollfd **, int *);
 
@@ -90,10 +89,10 @@ int main (void)
 	epoll_read_ev.events = EPOLLIN;
 	int ev_fd = epoll_create(1);
 	if (ev_fd < 0)
-		die("epoll_create", errno);
+		die("epoll_create");
 	for (int i = 0; i < fd_num; i++)
 		if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) < 0)
-			die("epoll_ctl", errno);
+			die("epoll_ctl");
 #endif
 
 	/* MAIN EVENT LOOP */
@@ -179,7 +178,7 @@ int main (void)
 		fprintf(stderr, red("An error occured\n"));
 	for (int i = 0; i < fd_num; i++) {
 		if (close(fds[i].fd) == -1)
-			die("close file descriptors", errno);
+			die("close file descriptors");
 	}
 	return 0;
 }
@@ -200,7 +199,7 @@ int key_buffer_add (struct key_buffer *pb, unsigned short key)
 	unsigned short *b;
 		b = (unsigned short *) realloc(pb->buf, sizeof(unsigned short) * (pb->size + 1));
 	if (!b)
-		die("realloc failed in key_buffer_add", errno);
+		die("realloc failed in key_buffer_add");
 	pb->buf = b;
 	pb->buf[pb->size++] = key;
 
@@ -221,7 +220,7 @@ int key_buffer_remove (struct key_buffer *pb, unsigned short key)
 			b = (unsigned short *) realloc(pb->buf, sizeof(unsigned short) * pb->size);
 			/* if realloc failed but the buffer is populated throw an error */
 			if (!b && pb->size)
-				die("realloc failed in key_buffer_remove: %s", errno);
+				die("realloc failed in key_buffer_remove: %s");
 			pb->buf = b;
 			return 0;
 		}
@@ -240,7 +239,7 @@ void exec_command (char *path)
 	char *argv[] = {path, NULL};
 	switch (fork()) {
 	case -1:
-		die("Could not fork: %s", errno);
+		die("Could not fork: %s");
 		break;
 	case 0:
 		/* we are the child */
@@ -266,7 +265,7 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 	/* Open the event directory */
 	DIR *ev_dir = opendir(evdev_root_dir);
 	if (!ev_dir)
-		die("opendir", errno);
+		die("opendir");
 
 	(*fd_num) = 0;
 	if ((*fds))
@@ -306,7 +305,7 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 
 		tmp_p = realloc((*fds), sizeof(struct pollfd) * ((*fd_num) + 1));
 		if (!tmp_p)
-			die("realloc file descriptors", errno);
+			die("realloc file descriptors");
 		(*fds) = (struct pollfd *) tmp_p;
 
 		(*fds)[(*fd_num)].events = POLLIN;
