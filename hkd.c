@@ -35,6 +35,7 @@
 #define yellow(str) (ANSI_COLOR_YELLOW str ANSI_COLOR_RESET)
 #define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
+#define die(str) {perror(red(str)); exit(errno);}
 
 struct key_buffer {
 	unsigned short *buf;
@@ -232,12 +233,6 @@ void int_handler (int signum)
 {
 	fprintf(stderr, yellow("Received interrupt signal, exiting gracefully...\n"));
 	term = 1;
-}
-
-void die (const char *msg, int err)
-{
-	fprintf(stderr, red("%s: %s"), msg != NULL ? msg : "error", err ? strerror(err): "exiting");
-	exit(err);
 }
 
 void exec_command (char *path)
