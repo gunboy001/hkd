@@ -7,11 +7,11 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <unistd.h>
-#include <poll.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <linux/input.h>
 #include <sys/epoll.h>
+#include <sys/inotify.h>
 
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
@@ -26,12 +26,15 @@
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
 #define die(str) {perror(red(str)); exit(errno);}
 
+#define EVENT_SIZE  (sizeof(struct inotify_event))
+#define EVENT_BUF_LEN     (1024 * ( EVENT_SIZE + 16 ))
+
 struct key_buffer {
 	unsigned short *buf;
 	unsigned int size;
 };
 
-int term = 0; // exit flag
+int dead = 0; // exit flag
 const char evdev_root_dir[] = "/dev/input/";
 
 int key_buffer_add (struct key_buffer*, unsigned short);
@@ -39,68 +42,70 @@ int key_buffer_remove (struct key_buffer*, unsigned short);
 int convert_key_value (unsigned short);
 void int_handler (int signum);
 void exec_command(char *);
-void update_descriptors_list (struct pollfd **, int *);
+void update_descriptors_list (int **, int *);
+int prepare_epoll(int *, int, int);
 
 // TODO: use getopts() to parse command line options
 int main (void)
 {
 	/* Handle SIGINT */
-	term = 0;
+	dead = 0;
 	struct sigaction action;
 	memset(&action, 0, sizeof(action));
 	action.sa_handler = int_handler;
 	sigaction(SIGINT, &action, NULL);
 
 	int fd_num = 0;
-	struct pollfd *fds = NULL;
+	int *fds = NULL;
 	update_descriptors_list(&fds, &fd_num);
 
-	if (fd_num) {
-		fprintf(stderr, yellow("Monitoring %d devices\n"), fd_num);
-	} else {
-		fprintf(stderr, red("Could not open any devices, exiting\n"));
-		exit(-1);
-	}
 	// TODO: watch for events inside /dev/input and reload accordingly
 	// could use the epoll syscall or the inotify API (linux),
 	// event API (openbsd), kqueue syscall (BSD and macos), a separate
 	// process or some polling system inside the main loop to maintain
 	// portability across other *NIX derivatives, could also use libev
 
+	int event_watcher = inotify_init1(IN_NONBLOCK);
+	if (event_watcher < 0)
+		die("could not call inotify_init");
+	if (inotify_add_watch(event_watcher, evdev_root_dir, IN_CREATE | IN_DELETE) < 0)
+		die("could not add /dev/input to the watch list");
+
 	struct input_event event;
 	struct key_buffer pb = {NULL, 0}; // Pressed keys buffer
 	ssize_t rb; // Read bits
 
-/* Prepare for epoll */
-
-fprintf(stderr, yellow("using epoll based polling\n"));
-struct epoll_event epoll_read_ev;
-epoll_read_ev.events = EPOLLIN;
-int ev_fd = epoll_create(1);
-if (ev_fd < 0)
-	die("epoll_create");
-for (int i = 0; i < fd_num; i++)
-	if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) < 0)
-		die("epoll_ctl");
-
+	/* Prepare for epoll */
+	int ev_fd;
+	ev_fd = prepare_epoll(fds, fd_num, event_watcher);
 
 	/* MAIN EVENT LOOP */
+	mainloop_begin:
 	for (;;) {
 		// TODO: better error reporting
 		/* On linux use epoll(2) as it gives better performance */
 		static struct epoll_event ev_type;
-		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) == -1 || term)
+		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) < 0 || dead)
 			break;
+
+		char buf[EVENT_BUF_LEN];
+		if (read(event_watcher, buf, EVENT_BUF_LEN) >= 0) {
+			sleep(1); // wait for devices to settle
+			update_descriptors_list(&fds, &fd_num);
+			if (close(ev_fd) < 0)
+				die("could not close event filedescriptors list (ev_fd)");
+			ev_fd = prepare_epoll(fds, fd_num, event_watcher);
+			goto mainloop_begin;
+		}
 
 		static int i;
 		static unsigned int prev_size;
 
 		prev_size = pb.size;
-		for (i = 0; i < fd_num; i++) {
+		if (ev_type.events == EPOLLIN) {
+			for (i = 0; i < fd_num; i++) {
 
-			if (ev_type.events == EPOLLIN) {
-
-				rb = read(fds[i].fd, &event, sizeof(struct input_event));
+				rb = read(fds[i], &event, sizeof(struct input_event));
 				if (rb != sizeof(struct input_event)) continue;
 
 				/* Ignore touchpad events */
@@ -151,12 +156,12 @@ for (int i = 0; i < fd_num; i++)
 	// interrupts as the father so everything should work fine for now
 	wait(NULL);
 	free(pb.buf);
-	if (!term)
-		fprintf(stderr, red("An error occured\n"));
-	for (int i = 0; i < fd_num; i++) {
-		if (close(fds[i].fd) == -1)
+	if (!dead)
+		fprintf(stderr, red("an error occured\n"));
+	close(event_watcher);
+	for (int i = 0; i < fd_num; i++)
+		if (close(fds[i]) == -1)
 			die("close file descriptors");
-	}
 	return 0;
 }
 
@@ -208,7 +213,7 @@ int key_buffer_remove (struct key_buffer *pb, unsigned short key)
 void int_handler (int signum)
 {
 	fprintf(stderr, yellow("Received interrupt signal, exiting gracefully...\n"));
-	term = 1;
+	dead = 1;
 }
 
 void exec_command (char *path)
@@ -232,7 +237,7 @@ void exec_command (char *path)
 	// TODO: communication between parent and child about process status/errors/etc
 }
 
-void update_descriptors_list (struct pollfd **fds, int *fd_num)
+void update_descriptors_list (int **fds, int *fd_num)
 {
 	struct dirent *file_ent;
 	char ev_path[sizeof(evdev_root_dir) + NAME_MAX + 1];
@@ -242,11 +247,11 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 	/* Open the event directory */
 	DIR *ev_dir = opendir(evdev_root_dir);
 	if (!ev_dir)
-		die("opendir");
+		die("Could not open /dev/input");
 
 	(*fd_num) = 0;
 	if ((*fds))
-		free(fds);
+		free(*fds);
 
 	for (;;) {
 
@@ -280,20 +285,40 @@ void update_descriptors_list (struct pollfd **fds, int *fd_num)
 			continue;
 		}
 
-		tmp_p = realloc((*fds), sizeof(struct pollfd) * ((*fd_num) + 1));
+		tmp_p = realloc((*fds), sizeof(int) * ((*fd_num) + 1));
 		if (!tmp_p)
 			die("realloc file descriptors");
-		(*fds) = (struct pollfd *) tmp_p;
+		(*fds) = (int *) tmp_p;
 
-		(*fds)[(*fd_num)].events = POLLIN;
-		(*fds)[(*fd_num)].fd = tmp_fd;
+		(*fds)[(*fd_num)] = tmp_fd;
 		(*fd_num)++;
 	}
 	closedir(ev_dir);
+	if (*fd_num) {
+		fprintf(stderr, yellow("Monitoring %d devices\n"), *fd_num);
+	} else {
+		fprintf(stderr, red("Could not open any devices, exiting\n"));
+		exit(-1);
+	}
 }
 
 int convert_key_value (unsigned short key)
 {
 	int outchar = 0;
 	return outchar;
+}
+
+int prepare_epoll(int *fds, int fd_num, int event_watcher)
+{
+	static struct epoll_event epoll_read_ev;
+ 	epoll_read_ev.events = EPOLLIN;
+ 	int ev_fd = epoll_create(1);
+ 	if (ev_fd < 0)
+ 		die("failed epoll_create");
+ 	if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, event_watcher, &epoll_read_ev) < 0)
+ 		die("could not add file descriptor to the epoll list");
+ 	for (int i = 0; i < fd_num; i++)
+ 		if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i], &epoll_read_ev) < 0)
+ 			die("could not add file descriptor to the epoll list");
+	return ev_fd;
 }
