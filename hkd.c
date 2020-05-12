@@ -1,35 +1,16 @@
-/* Standard stuff */
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-/* Standard errors */
 #include <errno.h>
-/* Directory and file control */
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <unistd.h>
-/* Polling */
 #include <poll.h>
-/* Signaling */
 #include <signal.h>
-/* Process wait */
 #include <sys/wait.h>
 
-#define ANSI_COLOR_RED     "\x1b[31m"
-#define ANSI_COLOR_GREEN   "\x1b[32m"
-#define ANSI_COLOR_YELLOW  "\x1b[33m"
-#define ANSI_COLOR_BLUE    "\x1b[34m"
-#define ANSI_COLOR_MAGENTA "\x1b[35m"
-#define ANSI_COLOR_CYAN    "\x1b[36m"
-#define ANSI_COLOR_RESET   "\x1b[0m"
-
-#define yellow(str) (ANSI_COLOR_YELLOW str ANSI_COLOR_RESET)
-#define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
-#define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
-
-/* Determine dependencies based on platform */
 #ifdef __linux__
 	#define OS linux
 	#include <linux/input.h>
@@ -42,6 +23,18 @@
 #ifndef OS
 	#define OS unix
 #endif
+
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_YELLOW  "\x1b[33m"
+#define ANSI_COLOR_BLUE    "\x1b[34m"
+#define ANSI_COLOR_MAGENTA "\x1b[35m"
+#define ANSI_COLOR_CYAN    "\x1b[36m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
+
+#define yellow(str) (ANSI_COLOR_YELLOW str ANSI_COLOR_RESET)
+#define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
+#define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
 
 struct key_buffer {
 	unsigned short *buf;
