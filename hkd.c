@@ -10,19 +10,8 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/wait.h>
-
-#ifdef __linux__
-	#define OS linux
-	#include <linux/input.h>
-	#include <sys/epoll.h>
-#endif
-#ifdef __FreeBSD__
-	#define OS bsd
-	#include <dev/evdev/input.h>
-#endif
-#ifndef OS
-	#define OS unix
-#endif
+#include <linux/input.h>
+#include <sys/epoll.h>
 
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
@@ -83,45 +72,33 @@ int main (void)
 	ssize_t rb; // Read bits
 
 /* Prepare for epoll */
-#if OS == linux
-	fprintf(stderr, yellow("using epoll based polling\n"));
-	struct epoll_event epoll_read_ev;
-	epoll_read_ev.events = EPOLLIN;
-	int ev_fd = epoll_create(1);
-	if (ev_fd < 0)
-		die("epoll_create");
-	for (int i = 0; i < fd_num; i++)
-		if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) < 0)
-			die("epoll_ctl");
-#endif
+
+fprintf(stderr, yellow("using epoll based polling\n"));
+struct epoll_event epoll_read_ev;
+epoll_read_ev.events = EPOLLIN;
+int ev_fd = epoll_create(1);
+if (ev_fd < 0)
+	die("epoll_create");
+for (int i = 0; i < fd_num; i++)
+	if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, fds[i].fd, &epoll_read_ev) < 0)
+		die("epoll_ctl");
+
 
 	/* MAIN EVENT LOOP */
 	for (;;) {
 		// TODO: better error reporting
 		/* On linux use epoll(2) as it gives better performance */
-#if OS == linux
 		static struct epoll_event ev_type;
 		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) == -1 || term)
 			break;
-
-		// TODO: use and test kqueue(2) for BSD systems
-		/* On other systems use poll(2) to wait por a file dscriptor
-		 * to become ready for reading. */
-#else // TODO: add unix and bsd cases
-		if (poll(fds, fd_num, -1) != -1 || term)
-			break;
-#endif
 
 		static int i;
 		static unsigned int prev_size;
 
 		prev_size = pb.size;
 		for (i = 0; i < fd_num; i++) {
-#if OS == linux
+
 			if (ev_type.events == EPOLLIN) {
-#else // TODO: add unix and bsd cases
-			if (fds[i].revents == fds[i].events) {
-#endif
 
 				rb = read(fds[i].fd, &event, sizeof(struct input_event));
 				if (rb != sizeof(struct input_event)) continue;
