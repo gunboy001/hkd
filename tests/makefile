@@ -7,5 +7,7 @@ ioctl: ioctl.c
 
 evtest: evtest.c
 
+inotify: inotify.c
+
 clean:
-	rm *.o parse ioctl 2> /dev/null
+	rm *.o parse ioctl inotify 2> /dev/null
