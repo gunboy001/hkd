@@ -150,6 +150,7 @@ int main (void)
 	free(pb.buf);
 	if (!dead)
 		fprintf(stderr, red("an error occured\n"));
+	close(ev_fd);
 	close(event_watcher);
 	for (int i = 0; i < fd_num; i++)
 		if (close(fds[i]) == -1)
