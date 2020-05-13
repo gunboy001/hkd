@@ -22,6 +22,7 @@
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
 #define yellow(str) (ANSI_COLOR_YELLOW str ANSI_COLOR_RESET)
+#define green(str) (ANSI_COLOR_GREEN str ANSI_COLOR_RESET)
 #define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
 #define die(str) {perror(red(str)); exit(errno);}
@@ -288,7 +289,7 @@ void update_descriptors_list (int **fds, int *fd_num)
 	}
 	closedir(ev_dir);
 	if (*fd_num) {
-		fprintf(stderr, yellow("Monitoring %d devices\n"), *fd_num);
+		fprintf(stderr, green("Monitoring %d devices\n"), *fd_num);
 	} else {
 		fprintf(stderr, red("Could not open any devices, exiting\n"));
 		exit(-1);
