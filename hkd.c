@@ -27,8 +27,8 @@
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
 #define die(str) {perror(red(str)); exit(errno);}
 
-#define EVENT_SIZE  (sizeof(struct inotify_event))
-#define EVENT_BUF_LEN     (1024 * ( EVENT_SIZE + 16 ))
+#define EVENT_SIZE (sizeof(struct inotify_event))
+#define EVENT_BUF_LEN (1024*(EVENT_SIZE+16))
 
 struct key_buffer {
 	unsigned short *buf;
