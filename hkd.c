@@ -59,12 +59,6 @@ int main (void)
 	int *fds = NULL;
 	update_descriptors_list(&fds, &fd_num);
 
-	// TODO: watch for events inside /dev/input and reload accordingly
-	// could use the epoll syscall or the inotify API (linux),
-	// event API (openbsd), kqueue syscall (BSD and macos), a separate
-	// process or some polling system inside the main loop to maintain
-	// portability across other *NIX derivatives, could also use libev
-
 	int event_watcher = inotify_init1(IN_NONBLOCK);
 	if (event_watcher < 0)
 		die("could not call inotify_init");
@@ -98,12 +92,10 @@ int main (void)
 			goto mainloop_begin;
 		}
 
-		static int i;
 		static unsigned int prev_size;
-
 		prev_size = pb.size;
 		if (ev_type.events == EPOLLIN) {
-			for (i = 0; i < fd_num; i++) {
+			for (int i = 0; i < fd_num; i++) {
 
 				rb = read(fds[i], &event, sizeof(struct input_event));
 				if (rb != sizeof(struct input_event)) continue;
