@@ -244,8 +244,8 @@ void update_descriptors_list (int **fds, int *fd_num)
 		die("Could not open /dev/input");
 
 	(*fd_num) = 0;
-	if ((*fds))
-		free(*fds);
+//	if ((*fds))
+//		free(*fds);
 
 	for (;;) {
 
