@@ -83,6 +83,9 @@ int main (void)
 		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) < 0 || dead)
 			break;
 
+		if (ev_type.events != EPOLLIN)
+			continue;
+
 		char buf[EVENT_BUF_LEN];
 		if (read(event_watcher, buf, EVENT_BUF_LEN) >= 0) {
 			sleep(1); // wait for devices to settle
@@ -95,31 +98,29 @@ int main (void)
 
 		static unsigned int prev_size;
 		prev_size = pb.size;
-		if (ev_type.events == EPOLLIN) {
-			for (int i = 0; i < fd_num; i++) {
+		for (int i = 0; i < fd_num; i++) {
 
-				rb = read(fds[i], &event, sizeof(struct input_event));
-				if (rb != sizeof(struct input_event)) continue;
+			rb = read(fds[i], &event, sizeof(struct input_event));
+			if (rb != sizeof(struct input_event)) continue;
 
-				/* Ignore touchpad events */
-				// TODO: make a event blacklist system
-				if (
-					event.type == EV_KEY &&
-					event.code != BTN_TOUCH &&
-					event.code != BTN_TOOL_FINGER &&
-					event.code != BTN_TOOL_DOUBLETAP &&
-					event.code != BTN_TOOL_TRIPLETAP
-					) {
-					switch (event.value) {
-					/* Key released */
-					case (0):
-						key_buffer_remove(&pb, event.code);
-						break;
-					/* Key pressed */
-					case (1):
-						key_buffer_add(&pb, event.code);
-						break;
-					}
+			/* Ignore touchpad events */
+			// TODO: make a event blacklist system
+			if (
+				event.type == EV_KEY &&
+				event.code != BTN_TOUCH &&
+				event.code != BTN_TOOL_FINGER &&
+				event.code != BTN_TOOL_DOUBLETAP &&
+				event.code != BTN_TOOL_TRIPLETAP
+				) {
+				switch (event.value) {
+				/* Key released */
+				case (0):
+					key_buffer_remove(&pb, event.code);
+					break;
+				/* Key pressed */
+				case (1):
+					key_buffer_add(&pb, event.code);
+					break;
 				}
 			}
 		}
