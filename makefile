@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Werror -pedantic -O2
+CFLAGS = -Wall -Werror -pedantic --std=c99 -O2
 
 hkd: hkd.o
 

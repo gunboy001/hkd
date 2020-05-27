@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,6 +14,8 @@
 #include <linux/input.h>
 #include <sys/epoll.h>
 #include <sys/inotify.h>
+
+#define FILE_NAME_MAX_LENGTH 255
 
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
@@ -235,7 +239,7 @@ void exec_command (char *path)
 void update_descriptors_list (int **fds, int *fd_num)
 {
 	struct dirent *file_ent;
-	char ev_path[sizeof(evdev_root_dir) + NAME_MAX + 1];
+	char ev_path[sizeof(evdev_root_dir) + FILE_NAME_MAX_LENGTH + 1];
 	void *tmp_p;
 	int tmp_fd;
 	unsigned char evtype_b[EV_MAX];
@@ -257,8 +261,8 @@ void update_descriptors_list (int **fds, int *fd_num)
 			continue;
 
 		/* Compose absolute path from relative */
-		strncpy(ev_path, evdev_root_dir, sizeof(evdev_root_dir) + NAME_MAX);
-	   	strncat(ev_path, file_ent->d_name, sizeof(evdev_root_dir) + NAME_MAX);
+		strncpy(ev_path, evdev_root_dir, sizeof(evdev_root_dir) + FILE_NAME_MAX_LENGTH);
+	   	strncat(ev_path, file_ent->d_name, sizeof(evdev_root_dir) + FILE_NAME_MAX_LENGTH);
 
 		/* Open device and check if it can give key events otherwise ignore it */
 		tmp_fd = open(ev_path, O_RDONLY | O_NONBLOCK);
