@@ -44,6 +44,7 @@ const char evdev_root_dir[] = "/dev/input/";
 
 int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
+int key_buffer_compare (struct key_buffer *haystack, struct key_buffer *needle);
 int convert_key_value (unsigned short);
 void int_handler (int signum);
 void exec_command(char *);
@@ -81,7 +82,6 @@ int main (void)
 	/* MAIN EVENT LOOP */
 	mainloop_begin:
 	for (;;) {
-		// TODO: better error reporting
 		/* On linux use epoll(2) as it gives better performance */
 		static struct epoll_event ev_type;
 		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) < 0 || dead)
@@ -108,7 +108,6 @@ int main (void)
 			if (rb != sizeof(struct input_event)) continue;
 
 			/* Ignore touchpad events */
-			// TODO: make a event blacklist system
 			if (
 				event.type == EV_KEY &&
 				event.code != BTN_TOUCH &&
@@ -129,25 +128,22 @@ int main (void)
 			}
 		}
 
+		struct key_buffer comb1;
+		unsigned short *tmp = malloc(sizeof(unsigned short) * 2);
+		tmp[0] = 56;
+		tmp[1] = 31;
+		comb1.buf = tmp;
+		comb1.size = 2;
+
 		if (pb.size != prev_size) {
 			printf("Pressed keys: ");
 			for (unsigned int i = 0; i < pb.size; i++)
 				printf("%d ", pb.buf[i]);
 			putchar('\n');
-			switch (pb.size) {
-			case 1:
-				/* You can use keys defined in input.h */
-				if (pb.buf[0] == KEY_MUTE)
-					exec_command((char *)"/home/ale/hello");
-				break;
-			case 2:
-				if (pb.buf[0] == 56 || pb.buf[0] == 31)
-					if (pb.buf[1] == 31 || pb.buf[1] == 56)
-						exec_command((char *)"/home/ale/hello");
-				break;
-			}
-		}
 
+			if (key_buffer_compare(&pb, &comb1))
+				exec_command((char *)"/home/ale/hello");
+		}
 	}
 
 	// TODO: better child handling, for now all children receive the same
@@ -321,3 +317,19 @@ int prepare_epoll(int *fds, int fd_num, int event_watcher)
  			die("could not add file descriptor to the epoll list");
 	return ev_fd;
 }
+
+int key_buffer_compare (struct key_buffer *haystack, struct key_buffer *needle)
+{
+	if (haystack->size != needle->size)
+		return 0;
+	int ff = 0;
+	for (int x = needle->size - 1; x >= 0; x--) {
+		for (int i = 0; i < haystack->size; i++)
+			ff += (needle->buf[x] == haystack->buf[i]);
+		if (!ff)
+			return 0;
+		ff = 0;
+	}
+	return 1;
+}
+
