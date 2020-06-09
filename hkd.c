@@ -17,6 +17,7 @@
 #include <sys/inotify.h>
 
 #define FILE_NAME_MAX_LENGTH 255
+#define KEY_BUFFER_SIZE 64
 
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
@@ -178,7 +179,7 @@ const struct {
 {"KEY_TOUCHPAD_OFF", KEY_TOUCHPAD_OFF}};
 
 struct key_buffer {
-	unsigned short *buf;
+	unsigned short buf[KEY_BUFFER_SIZE];
 	unsigned int size;
 };
 
@@ -215,7 +216,7 @@ int main (void)
 		die("could not add /dev/input to the watch list");
 
 	struct input_event event;
-	struct key_buffer pb = {NULL, 0}; // Pressed keys buffer
+	struct key_buffer pb = {{0}, 0}; // Pressed keys buffer
 	ssize_t rb; // Read bits
 
 	/* Prepare for epoll */
@@ -271,12 +272,7 @@ int main (void)
 			}
 		}
 
-		struct key_buffer comb1;
-		unsigned short *tmp = malloc(sizeof(unsigned short) * 2);
-		tmp[0] = KEY_LEFTALT;
-		tmp[1] = KEY_S;
-		comb1.buf = tmp;
-		comb1.size = 2;
+		struct key_buffer comb1 = {{KEY_LEFTALT, KEY_S}, 2};
 
 		if (pb.size != prev_size) {
 			printf("Pressed keys: ");
@@ -292,7 +288,6 @@ int main (void)
 	// TODO: better child handling, for now all children receive the same
 	// interrupts as the father so everything should work fine
 	wait(NULL);
-	free(pb.buf);
 	if (!dead)
 		fprintf(stderr, red("an error occured\n"));
 	close(ev_fd);
@@ -303,45 +298,33 @@ int main (void)
 	return 0;
 }
 
-// TODO: optimize functions to preallocate some memory
-int key_buffer_add (struct key_buffer *pb, unsigned short key)
-{
 /* Adds a keycode to the pressed buffer if it is not already present
  * Returns non zero if the key was not added. */
-
+int key_buffer_add (struct key_buffer *pb, unsigned short key)
+{
 	if (!pb) return 1;
-	if (pb->buf != NULL) {
-		/* Linear search if the key is already buffered */
-		for (unsigned int i = 0; i < pb->size; i++)
-			if (key == pb->buf[i]) return 1;
-	}
+	/* Linear search if the key is already buffered */
+	for (unsigned int i = 0; i < pb->size; i++)
+		if (key == pb->buf[i]) return 1;
 
-	unsigned short *b;
-		b = (unsigned short *) realloc(pb->buf, sizeof(unsigned short) * (pb->size + 1));
-	if (!b)
-		die("realloc failed in key_buffer_add");
-	pb->buf = b;
+	if (pb->size >= KEY_BUFFER_SIZE)
+		return 1;
+
 	pb->buf[pb->size++] = key;
 
 	return 0;
 }
 
-int key_buffer_remove (struct key_buffer *pb, unsigned short key)
-{
 /* Removes a keycode from a pressed buffer if it is present returns
  * non zero in case of failure (key not present or buffer empty). */
+int key_buffer_remove (struct key_buffer *pb, unsigned short key)
+{
 	if (!pb) return 1;
 
 	for (unsigned int i = 0; i < pb->size; i++) {
 		if (pb->buf[i] == key) {
 			pb->size--;
 			pb->buf[i] = pb->buf[pb->size];
-			unsigned short *b;
-			b = (unsigned short *) realloc(pb->buf, sizeof(unsigned short) * pb->size);
-			/* if realloc failed but the buffer is populated throw an error */
-			if (!b && pb->size)
-				die("realloc failed in key_buffer_remove: %s");
-			pb->buf = b;
 			return 0;
 		}
 	}
