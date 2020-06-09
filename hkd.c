@@ -31,6 +31,7 @@
 #define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
 #define die(str) {perror(red(str)); exit(errno);}
+#define array_size(val) (val ? sizeof(val)/sizeof(a[0]) : 0)
 
 #define EVENT_SIZE (sizeof(struct inotify_event))
 #define EVENT_BUF_LEN (1024*(EVENT_SIZE+16))
@@ -188,9 +189,9 @@ int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
 int key_buffer_compare (struct key_buffer *haystack, struct key_buffer *needle);
 void int_handler (int signum);
-void exec_command(char *);
+void exec_command (char *);
 void update_descriptors_list (int **, int *);
-int prepare_epoll(int *, int, int);
+int prepare_epoll (int *, int, int);
 
 // TODO: use getopts() to parse command line options
 int main (void)
@@ -283,7 +284,7 @@ int main (void)
 			putchar('\n');
 
 			if (key_buffer_compare(&pb, &comb1))
-				exec_command((char *)"/home/ale/hello");
+				exec_command((char *)"sh -e $HOME/hello");
 		}
 	}
 
@@ -438,7 +439,7 @@ void update_descriptors_list (int **fds, int *fd_num)
 	}
 }
 
-int prepare_epoll(int *fds, int fd_num, int event_watcher)
+int prepare_epoll (int *fds, int fd_num, int event_watcher)
 {
 	static struct epoll_event epoll_read_ev;
  	epoll_read_ev.events = EPOLLIN;
