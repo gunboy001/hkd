@@ -31,7 +31,7 @@
 #define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
 #define die(str) {perror(red(str)); exit(errno);}
-#define array_size(val) (val ? sizeof(val)/sizeof(a[0]) : 0)
+#define array_size(val) (val ? sizeof(val)/sizeof(val[0]) : 0)
 
 #define EVENT_SIZE (sizeof(struct inotify_event))
 #define EVENT_BUF_LEN (1024*(EVENT_SIZE+16))
@@ -192,6 +192,7 @@ void int_handler (int signum);
 void exec_command (char *);
 void update_descriptors_list (int **, int *);
 int prepare_epoll (int *, int, int);
+void str_to_argv (char ***, const char *);
 
 // TODO: use getopts() to parse command line options
 int main (void)
@@ -284,7 +285,7 @@ int main (void)
 			putchar('\n');
 
 			if (key_buffer_compare(&pb, &comb1))
-				exec_command((char *)"sh -e $HOME/hello");
+				exec_command("ufetch");
 		}
 	}
 
@@ -355,13 +356,19 @@ void int_handler (int signum)
 
 void exec_command (char *path)
 {
-	char *argv[] = {path, NULL};
+	char **argv = NULL;
+	str_to_argv(&argv, path);
+
 	switch (fork()) {
 	case -1:
-		die("Could not fork: %s");
+		die("Could not fork");
 		break;
 	case 0:
 		/* we are the child */
+		if (!argv) {
+			printf(red("No command to execute\n"));
+			exit(1);
+		}
 		if(execvp(path, argv) < 0) {
 			/* execv only returns if an error occured, so we exit
 			 * otherwise we duplicate the process */
@@ -469,3 +476,34 @@ int key_buffer_compare (struct key_buffer *haystack, struct key_buffer *needle)
 	return 1;
 }
 
+void str_to_argv (char ***argv, const char *path)
+{
+	char * str = NULL;
+	if (!(str = malloc(sizeof(path))))
+		die("malloc in str_to_argv()");
+	strcpy(str, path);
+
+	char *token = NULL;
+	token = strtok(str, " ");
+	if (!token) {
+		if (!(*argv = realloc(*argv, sizeof(char *))))
+			die("realloc in str_to_argv()");
+		*argv[0] = malloc(sizeof(str));
+		strcpy(*argv[0], str);
+		goto end_return;
+	} else {
+		if (!(*argv = realloc(*argv, sizeof(char *))))
+			die("realloc in str_to_argv()");
+		*argv[0] = malloc(sizeof(token));
+		strcpy(*argv[0], token);
+	}
+	for (int i = 1; (token = strtok(NULL, " ")); i++) {
+		if (!(*argv = realloc(*argv, sizeof(char *) * (i + 1))))
+			die("realloc in str_to_argv()");
+		*argv[i] = malloc(sizeof(token));
+		strcpy(*argv[i], token);
+	}
+	end_return:
+	free(str);
+	return;
+}
