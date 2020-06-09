@@ -9,5 +9,7 @@ evtest: evtest.c
 
 inotify: inotify.c
 
+struct_init: struct_init.c
+
 clean:
-	rm *.o parse ioctl inotify 2> /dev/null
+	rm *.o parse ioctl inotify struct_init 2> /dev/null

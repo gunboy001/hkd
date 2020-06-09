@@ -5,3 +5,4 @@ hkd*
 tests/parse
 tests/ioctl
 tests/evtest
+tests/struct_init
