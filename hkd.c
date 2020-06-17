@@ -1,4 +1,3 @@
-
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE
 #include <stdlib.h>
@@ -17,7 +16,7 @@
 #include <sys/inotify.h>
 
 #define FILE_NAME_MAX_LENGTH 255
-#define KEY_BUFFER_SIZE 64
+#define KEY_BUFFER_SIZE 16
 
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
