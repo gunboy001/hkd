@@ -274,7 +274,7 @@ int main (void)
 
 		struct key_buffer comb1 = {{KEY_LEFTALT, KEY_S}, 2};
 
-		if (pb.size != prev_size) {
+		if (pb.size > prev_size) {
 			printf("Pressed keys: ");
 			for (unsigned int i = 0; i < pb.size; i++)
 				printf("%d ", pb.buf[i]);
