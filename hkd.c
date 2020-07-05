@@ -187,7 +187,8 @@ const char evdev_root_dir[] = "/dev/input/";
 
 int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
-int key_buffer_compare (struct key_buffer *haystack, struct key_buffer *needle);
+int key_buffer_compare_random (struct key_buffer *haystack, struct key_buffer *needle);
+int key_buffer_compare_ordered (struct key_buffer *haystack, struct key_buffer *needle);
 void int_handler (int signum);
 void exec_command (char *);
 void update_descriptors_list (int **, int *);
@@ -279,7 +280,7 @@ int main (void)
 				printf("%d ", pb.buf[i]);
 			putchar('\n');
 
-			if (key_buffer_compare(&pb, &comb1))
+			if (key_buffer_compare_ordered(&pb, &comb1))
 				exec_command("ufetch");
 		}
 	}
@@ -443,7 +444,8 @@ int prepare_epoll (int *fds, int fd_num, int event_watcher)
 	return ev_fd;
 }
 
-int key_buffer_compare (struct key_buffer *haystack, struct key_buffer *needle)
+/* Checks if two key buffers contain the same keys in no specified order */
+int key_buffer_compare_random (struct key_buffer *haystack, struct key_buffer *needle)
 {
 	if (haystack->size != needle->size)
 		return 0;
@@ -454,6 +456,18 @@ int key_buffer_compare (struct key_buffer *haystack, struct key_buffer *needle)
 		if (!ff)
 			return 0;
 		ff = 0;
+	}
+	return 1;
+}
+
+/* Checks if two key buffers are the same (same order) */
+int key_buffer_compare_ordered (struct key_buffer *haystack, struct key_buffer *needle)
+{
+	if (haystack->size != needle->size)
+		return 0;
+	for (int i = 0; i < needle->size; i++) {
+		if (needle->buf[i] != haystack->buf[i])
+			return 0;
 	}
 	return 1;
 }
