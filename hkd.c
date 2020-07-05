@@ -14,6 +14,7 @@
 #include <linux/input.h>
 #include <sys/epoll.h>
 #include <sys/inotify.h>
+#include <wordexp.h>
 
 #define FILE_NAME_MAX_LENGTH 255
 #define KEY_BUFFER_SIZE 16
@@ -30,7 +31,7 @@
 #define green(str) (ANSI_COLOR_GREEN str ANSI_COLOR_RESET)
 #define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
-#define die(str) {perror(red(str)); exit(errno);}
+#define die(str) {fputs(ANSI_COLOR_RED, stderr); perror(str); fputs(ANSI_COLOR_RESET, stderr); exit(errno);}
 #define array_size(val) (val ? sizeof(val)/sizeof(val[0]) : 0)
 
 #define EVENT_SIZE (sizeof(struct inotify_event))
@@ -187,13 +188,12 @@ const char evdev_root_dir[] = "/dev/input/";
 
 int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
-int key_buffer_compare_random (struct key_buffer *haystack, struct key_buffer *needle);
-int key_buffer_compare_ordered (struct key_buffer *haystack, struct key_buffer *needle);
+int key_buffer_compare_random (struct key_buffer *, struct key_buffer *);
+int key_buffer_compare_ordered (struct key_buffer *, struct key_buffer *);
 void int_handler (int signum);
 void exec_command (char *);
 void update_descriptors_list (int **, int *);
 int prepare_epoll (int *, int, int);
-void str_to_argv (char ***, const char *);
 
 // TODO: use getopts() to parse command line options
 int main (void)
@@ -261,11 +261,11 @@ int main (void)
 				) {
 				switch (event.value) {
 				/* Key released */
-				case (0):
+				case 0:
 					key_buffer_remove(&pb, event.code);
 					break;
 				/* Key pressed */
-				case (1):
+				case 1:
 					key_buffer_add(&pb, event.code);
 					break;
 				}
@@ -281,7 +281,7 @@ int main (void)
 			putchar('\n');
 
 			if (key_buffer_compare_ordered(&pb, &comb1))
-				exec_command("ufetch");
+				exec_command("ls -l [a-z]*");
 		}
 	}
 
@@ -337,31 +337,42 @@ void int_handler (int signum)
 	dead = 1;
 }
 
-void exec_command (char *path)
+/* Executes a command from a string */
+void exec_command (char *command)
 {
-	char **argv = NULL;
-	str_to_argv(&argv, path);
+	static wordexp_t result;	
 
-	switch (fork()) {
+	/* Expand the string for the program to run */
+	switch (wordexp (command, &result, 0)) {
+	case 0:
+		break;
+	case WRDE_NOSPACE:
+		/* If the error was WRDE_NOSPACE,
+		 * then perhaps part of the result was allocated */
+		wordfree (&result);
+		return;
+	default: 
+		/* Some other error */
+		fprintf(stderr, "Could not parse, %s is not valid", command);
+		return;
+	}
+	
+	pid_t cpid;
+	switch (cpid = fork()) {
 	case -1:
-		die("Could not fork");
+		fprintf(stderr, "Could not create child process: %s", strerror(errno));
+		wordfree(&result);
 		break;
 	case 0:
-		/* we are the child */
-		if (!argv) {
-			printf(red("No command to execute\n"));
-			exit(1);
-		}
-		if(execvp(path, argv) < 0) {
-			/* execv only returns if an error occured, so we exit
-			 * otherwise we duplicate the process */
-			fprintf(stderr, red("Could not run %s\n"), path);
-			exit(-1);
-		}
-		/* we shouldn't be here */
+		/* This is the child process, execute the command */
+		execvp(result.we_wordv[0], result.we_wordv);
+		die("Could not run command");
+		break;
+	default:
+		while (waitpid(cpid, NULL, WNOHANG) == -1) {}
+		wordfree(&result);
 		break;
 	}
-	// TODO: communication between parent and child about process status/errors/etc
 }
 
 void update_descriptors_list (int **fds, int *fd_num)
@@ -470,36 +481,4 @@ int key_buffer_compare_ordered (struct key_buffer *haystack, struct key_buffer *
 			return 0;
 	}
 	return 1;
-}
-
-void str_to_argv (char ***argv, const char *path)
-{
-	char * str = NULL;
-	if (!(str = malloc(sizeof(path))))
-		die("malloc in str_to_argv()");
-	strcpy(str, path);
-
-	char *token = NULL;
-	token = strtok(str, " ");
-	if (!token) {
-		if (!(*argv = realloc(*argv, sizeof(char *))))
-			die("realloc in str_to_argv()");
-		*argv[0] = malloc(sizeof(str));
-		strcpy(*argv[0], str);
-		goto end_return;
-	} else {
-		if (!(*argv = realloc(*argv, sizeof(char *))))
-			die("realloc in str_to_argv()");
-		*argv[0] = malloc(sizeof(token));
-		strcpy(*argv[0], token);
-	}
-	for (int i = 1; (token = strtok(NULL, " ")); i++) {
-		if (!(*argv = realloc(*argv, sizeof(char *) * (i + 1))))
-			die("realloc in str_to_argv()");
-		*argv[i] = malloc(sizeof(token));
-		strcpy(*argv[i], token);
-	}
-	end_return:
-	free(str);
-	return;
 }
