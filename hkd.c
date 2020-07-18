@@ -183,17 +183,31 @@ struct key_buffer {
 	unsigned int size;
 };
 
+/* Compare list: linked list that holds all valid hoteys parsed from the
+ * config file and the corresponding command */
+struct hotkey_list_e {
+	struct key_buffer kb;
+	char *command;
+	int sorted;
+	struct hotkey_list_e *next;
+};
+
+struct hotkey_list_e *hotkey_list = NULL;
 int dead = 0; // exit flag
 const char evdev_root_dir[] = "/dev/input/";
 
+/* key buffer operations */
 int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
-int key_buffer_compare_random (struct key_buffer *, struct key_buffer *);
-int key_buffer_compare_ordered (struct key_buffer *, struct key_buffer *);
+int key_buffer_compare_fuzzy (struct key_buffer *, struct key_buffer *);
+int key_buffer_compare (struct key_buffer *, struct key_buffer *);
 void int_handler (int signum);
 void exec_command (char *);
 void update_descriptors_list (int **, int *);
 int prepare_epoll (int *, int, int);
+/* hotkey list operations */
+void hotkey_list_add (struct hotkey_list_e *, struct key_buffer *, char *, int);
+void hotkey_list_destroy (struct hotkey_list_e *);
 
 // TODO: use getopts() to parse command line options
 int main (void)
@@ -280,7 +294,7 @@ int main (void)
 				printf("%d ", pb.buf[i]);
 			putchar('\n');
 
-			if (key_buffer_compare_ordered(&pb, &comb1))
+			if (key_buffer_compare(&pb, &comb1))
 				exec_command("ls -l [a-z]*");
 		}
 	}
@@ -333,8 +347,12 @@ int key_buffer_remove (struct key_buffer *pb, unsigned short key)
 
 void int_handler (int signum)
 {
-	fprintf(stderr, yellow("Received interrupt signal, exiting gracefully...\n"));
-	dead = 1;
+	switch (signum) {
+	case SIGINT:
+		fprintf(stderr, yellow("Received interrupt signal, exiting gracefully...\n"));
+		dead = 1;
+		break;
+	}
 }
 
 /* Executes a command from a string */
@@ -456,13 +474,13 @@ int prepare_epoll (int *fds, int fd_num, int event_watcher)
 }
 
 /* Checks if two key buffers contain the same keys in no specified order */
-int key_buffer_compare_random (struct key_buffer *haystack, struct key_buffer *needle)
+int key_buffer_compare_fuzzy (struct key_buffer *haystack, struct key_buffer *needle)
 {
 	if (haystack->size != needle->size)
 		return 0;
 	int ff = 0;
 	for (int x = needle->size - 1; x >= 0; x--) {
-		for (int i = 0; i < haystack->size; i++)
+		for (unsigned int i = 0; i < haystack->size; i++)
 			ff += (needle->buf[x] == haystack->buf[i]);
 		if (!ff)
 			return 0;
@@ -472,13 +490,42 @@ int key_buffer_compare_random (struct key_buffer *haystack, struct key_buffer *n
 }
 
 /* Checks if two key buffers are the same (same order) */
-int key_buffer_compare_ordered (struct key_buffer *haystack, struct key_buffer *needle)
+int key_buffer_compare (struct key_buffer *haystack, struct key_buffer *needle)
 {
 	if (haystack->size != needle->size)
 		return 0;
-	for (int i = 0; i < needle->size; i++) {
+	for (unsigned int i = 0; i < needle->size; i++) {
 		if (needle->buf[i] != haystack->buf[i])
 			return 0;
 	}
 	return 1;
+}
+
+void hotkey_list_destroy (struct hotkey_list_e *head)
+{
+	struct hotkey_list_e *tmp;
+	for (; head; free(tmp)) {
+		if (head->command)
+			free(head->command);
+		tmp = head;
+		head = head->next;
+	}
+}
+
+void hotkey_list_add (struct hotkey_list_e *head, struct key_buffer *kb, char *cmd, int s)
+{
+	struct hotkey_list_e *tmp;
+	if (!(tmp = malloc(sizeof(struct hotkey_list_e))))
+		die("Memory allocation failed in hotkey_list_add()");
+	if (!(tmp->command = malloc(sizeof(cmd))))
+		die("Memory allocation failed in hotkey_list_add()");
+	strcpy(tmp->command, cmd);
+	tmp->kb = *kb;
+	tmp->sorted = s;
+
+	if (head) {
+		for (; head->next; head = head->next);
+		head->next = tmp;
+	} else
+		head = tmp;
 }
