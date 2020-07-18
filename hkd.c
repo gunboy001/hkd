@@ -210,7 +210,7 @@ void hotkey_list_add (struct hotkey_list_e *, struct key_buffer *, char *, int);
 void hotkey_list_destroy (struct hotkey_list_e *);
 
 // TODO: use getopts() to parse command line options
-int main (void)
+int main (int argc, char *argv[])
 {
 	/* Handle SIGINT */
 	dead = 0;
@@ -218,6 +218,18 @@ int main (void)
 	memset(&action, 0, sizeof(action));
 	action.sa_handler = int_handler;
 	sigaction(SIGINT, &action, NULL);
+
+	/* Verbose flag */
+	int vflag = 0;
+
+	int opc;
+	while ((opc = getopt(argc, argv, "v")) != -1) {
+		switch (opc) {
+		case 'v':
+			vflag = 1;
+			break;
+		}
+	}
 
 	int fd_num = 0;
 	int *fds = NULL;
@@ -289,10 +301,12 @@ int main (void)
 		struct key_buffer comb1 = {{KEY_LEFTALT, KEY_S}, 2};
 
 		if (pb.size > prev_size) {
-			printf("Pressed keys: ");
-			for (unsigned int i = 0; i < pb.size; i++)
-				printf("%d ", pb.buf[i]);
-			putchar('\n');
+			if (vflag) {
+				printf("Pressed keys: ");
+				for (unsigned int i = 0; i < pb.size; i++)
+					printf("%d ", pb.buf[i]);
+				putchar('\n');
+			}
 
 			if (key_buffer_compare(&pb, &comb1))
 				exec_command("ls -l [a-z]*");
