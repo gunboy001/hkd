@@ -304,7 +304,8 @@ int main (int argc, char *argv[])
 			if (vflag) {
 				printf("Pressed keys: ");
 				for (unsigned int i = 0; i < pb.size; i++)
-					printf("%d ", pb.buf[i]);
+					//printf("%d ", pb.buf[i]);
+					printf("%s ", key_conversion_table[pb.buf[i] - 1].name);
 				putchar('\n');
 			}
 
