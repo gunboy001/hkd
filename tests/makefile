@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Werror -pedantic
+CFLAGS = -Wall -std=c99
 
 parse: parse.c
 
