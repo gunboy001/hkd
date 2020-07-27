@@ -15,10 +15,13 @@
 #include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <wordexp.h>
+#include <ctype.h>
 
+/* Value defines */
 #define FILE_NAME_MAX_LENGTH 255
 #define KEY_BUFFER_SIZE 16
 
+/* ANSI colors escape codes */
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
 #define ANSI_COLOR_YELLOW  "\x1b[33m"
@@ -27,18 +30,28 @@
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
+/* Macro functions */
 #define yellow(str) (ANSI_COLOR_YELLOW str ANSI_COLOR_RESET)
 #define green(str) (ANSI_COLOR_GREEN str ANSI_COLOR_RESET)
 #define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
-#define die(str) {fputs(ANSI_COLOR_RED, stderr); perror(str); fputs(ANSI_COLOR_RESET, stderr); exit(errno);}
+//#define die(str) {fputs(ANSI_COLOR_RED, stderr); perror(str); fputs(ANSI_COLOR_RESET, stderr); exit(errno);}
+#define die(str) {perror(red(str)); exit(errno);}
 #define array_size(val) (val ? sizeof(val)/sizeof(val[0]) : 0)
+#define array_size_const(val) ((int)(sizeof(val)/sizeof(val[0])))
+#define parse_failure(str, line) {fprintf(stderr, "Error in config file at line %d: " str "\n", line); exit(EXIT_FAILURE);}
 
 #define EVENT_SIZE (sizeof(struct inotify_event))
 #define EVENT_BUF_LEN (1024*(EVENT_SIZE+16))
 
+const char *config_paths[] = {
+	"$XDG_CONFIG_HOME/hkd/config",
+	"$HOME/.config/hkd/config",
+	"/etc/hkd/config",
+};
+
 const struct {
-	const char * const name;
+	const char *const name;
 	const unsigned short value;
 } key_conversion_table[] =
 {{"ESC", KEY_ESC}, {"1", KEY_1}, {"2", KEY_2}, {"3", KEY_3},
@@ -183,28 +196,33 @@ struct key_buffer {
 	unsigned int size;
 };
 
-/* Compare list: linked list that holds all valid hoteys parsed from the
+/* Hotkey list: linked list that holds all valid hoteys parsed from the
  * config file and the corresponding command */
 struct hotkey_list_e {
 	struct key_buffer kb;
 	char *command;
-	int sorted;
+	int fuzzy;
 	struct hotkey_list_e *next;
 };
 
 struct hotkey_list_e *hotkey_list = NULL;
 int dead = 0; // exit flag
 const char evdev_root_dir[] = "/dev/input/";
+unsigned long hotkey_size_mask = 0;
 
 /* key buffer operations */
 int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
 int key_buffer_compare_fuzzy (struct key_buffer *, struct key_buffer *);
 int key_buffer_compare (struct key_buffer *, struct key_buffer *);
+void key_buffer_reset (struct key_buffer *);
+/* Other operations */
 void int_handler (int signum);
 void exec_command (char *);
+void parse_config_file (void);
 void update_descriptors_list (int **, int *);
 int prepare_epoll (int *, int, int);
+unsigned short key_to_code (char *);
 /* hotkey list operations */
 void hotkey_list_add (struct hotkey_list_e *, struct key_buffer *, char *, int);
 void hotkey_list_destroy (struct hotkey_list_e *);
@@ -222,6 +240,7 @@ int main (int argc, char *argv[])
 	/* Verbose flag */
 	int vflag = 0;
 
+	/* Parse command line arguments */
 	int opc;
 	while ((opc = getopt(argc, argv, "v")) != -1) {
 		switch (opc) {
@@ -231,10 +250,15 @@ int main (int argc, char *argv[])
 		}
 	}
 
+	/* Parse config file */
+	parse_config_file();
+	
+	/* Load descriptors */
 	int fd_num = 0;
 	int *fds = NULL;
 	update_descriptors_list(&fds, &fd_num);
 
+	/* Prepare directory update watcher */
 	int event_watcher = inotify_init1(IN_NONBLOCK);
 	if (event_watcher < 0)
 		die("could not call inotify_init");
@@ -245,7 +269,7 @@ int main (int argc, char *argv[])
 	struct key_buffer pb = {{0}, 0}; // Pressed keys buffer
 	ssize_t rb; // Read bits
 
-	/* Prepare for epoll */
+	/* Prepare epoll list */
 	int ev_fd;
 	ev_fd = prepare_epoll(fds, fd_num, event_watcher);
 
@@ -298,19 +322,29 @@ int main (int argc, char *argv[])
 			}
 		}
 
-		struct key_buffer comb1 = {{KEY_LEFTALT, KEY_S}, 2};
+		if (pb.size <= prev_size)
+			continue;
 
-		if (pb.size > prev_size) {
-			if (vflag) {
-				printf("Pressed keys: ");
-				for (unsigned int i = 0; i < pb.size; i++)
-					//printf("%d ", pb.buf[i]);
-					printf("%s ", key_conversion_table[pb.buf[i] - 1].name);
-				putchar('\n');
+		// FIXME: keys after "z" are not shown properly, wrong name
+		if (vflag) {
+			printf("Pressed keys: ");
+			for (unsigned int i = 0; i < pb.size; i++)
+				printf("%s ", key_conversion_table[pb.buf[i] - 1].name);
+			putchar('\n');
+		}
+
+		struct hotkey_list_e *tmp;
+		int t = 0;
+		if (hotkey_size_mask & 1 << (pb.size - 1)) {
+			for (tmp = hotkey_list; tmp != NULL; tmp = tmp->next) {
+				if (tmp->fuzzy)
+					t = key_buffer_compare_fuzzy(&pb, &tmp->kb);
+				else
+					t = key_buffer_compare(&pb, &tmp->kb);
+				if (t)
+					exec_command(tmp->command);
+					
 			}
-
-			if (key_buffer_compare(&pb, &comb1))
-				exec_command("ls -l [a-z]*");
 		}
 	}
 
@@ -358,6 +392,13 @@ int key_buffer_remove (struct key_buffer *pb, unsigned short key)
 		}
 	}
 	return 1;
+}
+
+void key_buffer_reset (struct key_buffer *kb)
+{
+	kb->size = 0;
+	for (int i = 0; i < KEY_BUFFER_SIZE; i++)
+		kb->buf[i] = 0;
 }
 
 void int_handler (int signum)
@@ -418,7 +459,7 @@ void update_descriptors_list (int **fds, int *fd_num)
 	/* Open the event directory */
 	DIR *ev_dir = opendir(evdev_root_dir);
 	if (!ev_dir)
-		die("Could not open /dev/input");
+		die("could not open /dev/input");
 
 	(*fd_num) = 0;
 //	if ((*fds))
@@ -527,20 +568,131 @@ void hotkey_list_destroy (struct hotkey_list_e *head)
 	}
 }
 
-void hotkey_list_add (struct hotkey_list_e *head, struct key_buffer *kb, char *cmd, int s)
+void hotkey_list_add (struct hotkey_list_e *head, struct key_buffer *kb, char *cmd, int f)
 {
 	struct hotkey_list_e *tmp;
 	if (!(tmp = malloc(sizeof(struct hotkey_list_e))))
-		die("Memory allocation failed in hotkey_list_add()");
+		die("memory allocation failed in hotkey_list_add()");
 	if (!(tmp->command = malloc(sizeof(cmd))))
-		die("Memory allocation failed in hotkey_list_add()");
+		die("memory allocation failed in hotkey_list_add()");
 	strcpy(tmp->command, cmd);
 	tmp->kb = *kb;
-	tmp->sorted = s;
+	tmp->fuzzy = f;
 
 	if (head) {
 		for (; head->next; head = head->next);
 		head->next = tmp;
 	} else
-		head = tmp;
+		hotkey_list = tmp;
+}
+
+void parse_config_file (void)
+{
+	
+	wordexp_t result = {0};	
+	FILE *fd;
+	for (int i = 0; i < array_size_const(config_paths); i++) {
+		switch (wordexp(config_paths[i], &result, 0)) {
+		case 0:
+			break;
+		case WRDE_NOSPACE:
+			/* If the error was WRDE_NOSPACE,
+		 	* then perhaps part of the result was allocated */
+			wordfree (&result);
+			die("not enough space")
+		default: 
+			/* Some other error */
+			die("path not valid");
+		}
+	
+		fd = fopen(result.we_wordv[0], "r");
+		wordfree(&result);
+		if (fd)
+			break;
+		perror(yellow("error opening config file"));
+	}
+	if (!fd)
+		die("could not open any config files, check the log for more details");
+
+	struct key_buffer kb;
+	for (int linenum = 1;; linenum++) {
+		int fuzzy = 0, tmp;
+		char *line = NULL, *keys = NULL, *command = NULL;
+		size_t linelen = 0;
+
+		if (getline(&line, &linelen, fd) == -1)
+			break;
+		if (linelen < 2)
+			continue;
+
+		// Remove leading spaces
+		while (isspace(line[0]) && linelen > 1)
+			memmove(line, &line[1], --linelen);
+
+		// Skip comments and blank lines
+		if (line[0] == '#' || !line[0]) {
+			free(line);
+			continue;
+		}
+
+		// TODO: multiline commands, ending with "\\n"
+		// TODO: better error checks in order to remove unnecessary
+		// memmoves (line has to begin with cmment or "*-"), etc.
+
+		if (line[0] == '*')
+			fuzzy = 1;
+		memmove(line, &line[1], --linelen);
+		// Remove leading spaces
+		while (isspace(line[0]) && linelen > 1)
+			memmove(line, &line[1], --linelen);
+
+		keys = strtok(line, ":");
+		command = strtok(NULL, ":");
+		if (!command || !keys) {
+			parse_failure("No command or keys specified", linenum);
+			fprintf(stderr, "Error at line %d:"
+			"No command or keys specified\n", linenum);
+			exit(EXIT_FAILURE);
+		}
+
+		// Remove whitespaces in keys
+		tmp = strlen(keys);
+		for (int i = 0; i < tmp; i++) {
+			if (isspace(keys[i])) {
+				memmove(&line[i], &line[i + 1], --tmp);
+			}
+		}
+
+		// Remove leading and trailing spaces in command
+		tmp = strlen(command);
+		while (isspace(command[0]) && tmp > 1)
+			memmove(command, &command[1], --tmp);
+		tmp = strlen(command) - 1;
+		while (isspace(command[tmp]))
+			command[tmp--] = '\0';
+
+		key_buffer_reset(&kb);
+		char *k = strtok(keys, ",");
+		unsigned short kc;
+		do {
+			if (!(kc = key_to_code(k))) {
+				fprintf(stderr, "Error at line %d:"
+				"%s is not a valid key", linenum, k);
+				exit(EXIT_FAILURE);
+			}
+			key_buffer_add(&kb, kc);
+		} while ((k = strtok(NULL, ",")));
+		hotkey_list_add(hotkey_list, &kb, command, fuzzy);
+		hotkey_size_mask |= 1 << (kb.size - 1);
+		key_buffer_reset(&kb);	
+	}
+}
+
+unsigned short key_to_code (char *key)
+{
+	for (int i = 0; i < array_size_const(key_conversion_table); i++) {
+		if (!strcmp(key_conversion_table[i].name, key))
+			return key_conversion_table[i].value;
+	}
+	return 0;
 }
