@@ -6,6 +6,7 @@ hkd \- simple HotKey Daemon
 .SH SYNOPSIS
 .SY hkd
 .OP \-v
+.OP \-c file
 .YS
 
 .SH DESCRIPTION
@@ -22,6 +23,10 @@ correctly.
 .IP \-v
 verbose, prints the internal pressed key buffer upon change acting as a crude
 keylogger :^)
+.IP "\-c file"
+override default configuration file location, instead using the specified
+.I file
+as the temporary config file
 
 .SH FILES
 The configuration files are searched in the following order:
@@ -85,7 +90,9 @@ This is a valid config file example
 Known bugs are:
 .IP -
 Commands in the config file cannot be multiline
-.IP - 
+.IP -
+Invalid config files are not detected properly, or at least not explicitly
+.IP -
 Child processes
 are waited at program exit possibly causing the process tree to hang as there is
 no real child process control

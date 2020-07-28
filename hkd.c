@@ -206,9 +206,12 @@ struct hotkey_list_e {
 };
 
 struct hotkey_list_e *hotkey_list = NULL;
-int dead = 0; // exit flag
 const char evdev_root_dir[] = "/dev/input/";
 unsigned long hotkey_size_mask = 0;
+char *ext_config_file = NULL;
+/* Flags */
+int vflag = 0;
+int dead = 0; // exit flag
 
 /* key buffer operations */
 int key_buffer_add (struct key_buffer*, unsigned short);
@@ -237,16 +240,18 @@ int main (int argc, char *argv[])
 	action.sa_handler = int_handler;
 	sigaction(SIGINT, &action, NULL);
 
-	/* Verbose flag */
-	int vflag = 0;
-
 	/* Parse command line arguments */
 	int opc;
-	while ((opc = getopt(argc, argv, "v")) != -1) {
+	while ((opc = getopt(argc, argv, "vc:")) != -1) {
 		switch (opc) {
 		case 'v':
 			vflag = 1;
-			break;
+		case 'c':
+			ext_config_file = malloc(strlen(optarg) + 1);
+			if (!ext_config_file)
+				die("malloc in main()");
+			 strcpy(ext_config_file, optarg);
+		break;		
 		}
 	}
 
@@ -588,11 +593,10 @@ void hotkey_list_add (struct hotkey_list_e *head, struct key_buffer *kb, char *c
 
 void parse_config_file (void)
 {
-	
 	wordexp_t result = {0};	
 	FILE *fd;
-	for (int i = 0; i < array_size_const(config_paths); i++) {
-		switch (wordexp(config_paths[i], &result, 0)) {
+	if (ext_config_file) {
+		switch (wordexp(ext_config_file, &result, 0)) {
 		case 0:
 			break;
 		case WRDE_NOSPACE:
@@ -607,12 +611,34 @@ void parse_config_file (void)
 	
 		fd = fopen(result.we_wordv[0], "r");
 		wordfree(&result);
-		if (fd)
-			break;
-		perror(yellow("error opening config file"));
+		if (!fd)
+			die("error opening config file");
+		free(ext_config_file);
+		ext_config_file = NULL;
+	} else {
+		for (int i = 0; i < array_size_const(config_paths); i++) {
+			switch (wordexp(config_paths[i], &result, 0)) {
+			case 0:
+				break;
+			case WRDE_NOSPACE:
+				/* If the error was WRDE_NOSPACE,
+		 		* then perhaps part of the result was allocated */
+				wordfree (&result);
+				die("not enough space")
+			default: 
+				/* Some other error */
+				die("path not valid");
+			}
+	
+			fd = fopen(result.we_wordv[0], "r");
+			wordfree(&result);
+			if (fd)
+				break;
+			perror(yellow("error opening config file"));
+		}
+		if (!fd)
+			die("could not open any config files, check the log for more details");
 	}
-	if (!fd)
-		die("could not open any config files, check the log for more details");
 
 	struct key_buffer kb;
 	for (int linenum = 1;; linenum++) {
