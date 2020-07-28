@@ -2,6 +2,7 @@
 *.swp
 *.o
 hkd*
+!hkd.1
 tests/parse
 tests/ioctl
 tests/evtest

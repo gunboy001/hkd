@@ -1,0 +1,104 @@
+.TH HKD 1 "JULY 2020" "Alessandro Mauri"
+
+.SH NAME
+hkd \- simple HotKey Daemon
+
+.SH SYNOPSIS
+.SY hkd
+.OP \-v
+.YS
+
+.SH DESCRIPTION
+.PP
+hkd is a simple hotkey daemon that executes commands after pressing certain
+key combinations specified in the config file.
+.PP
+hkd works without a graphical session loaded as it uses the linux evdev
+interface, as such it can be used in a TTY. hkd also supports live reloading
+of input devices in and out, so newly inserted (or removed) devices are detected
+correctly.
+
+.SH OPTIONS
+.IP \-v
+verbose, prints the internal pressed key buffer upon change acting as a crude
+keylogger :^)
+
+.SH FILES
+The configuration files are searched in the following order:
+.I $XDG_CONFIG_HOME/hkd/config, $HOME/.config/hkd/config, /etc/hkd/config
+
+.SH USAGE
+For hkd to work properly the user starting it needs to be either in the
+.I root
+group or the
+.I input
+group, this is needed to acces the appropriate system files.
+.PP
+The config file is parsed as follows:
+.IP #
+lines staring with '#' are comments
+.PP
+Every new hotkey starts with one of these markers:
+.IP -
+normal matching
+.IP *
+fuzzy matching
+.PP
+Normal matching means that the keys need to be pressed in the same order as they
+are declared, whereas fuzzy matching means that they can be pressed in any order.
+.PP
+Leading or trailing whitespaces are ignored, whitespaces between the marker and
+the ':' are also ignored, whitespaces after the ':' are not ignored. The general
+syntax for a hotkey is:
+.I <marker> <keys>: <command>
+.PP
+Commads are expanded using 
+.BR wordexp(3)
+so "|&;<>(){}" as well as unescaped newlines are forbidden and will result in
+error, read the manpage for
+.BR wordexp(3)
+for more info about the possible word expansion capabilities.
+.PP
+Possible keys are taken directly from linux's input.h header file, those
+include normal keys, multimedia keys and special keys, for the full list
+of available keys either refer to the header file or this project's hkd.c
+source file. Keys as specified by the kernel are named "KEY_<name>", in this
+configuration file only the <name> is required.
+Key names are always capitalized and do not differenciate between upper or
+lower case, as such hotkeys that require a capitalized letter need to include
+RIGHTSHIFT or LEFTSHIFT in the keys section.
+Keys are intended as a list of comma separated strings.
+
+.SH EXAMPLES
+This is a valid config file example
+.PP
+.EX
+# Contents of
+# $HOME/.config/hkd/config
+\- LEFALT,LEFTSHIFT,S: ~/screenshot.sh \-c
+* LEFTMETA,1,D: $SCRIPTDIR/wonkyscript
+\- LEFTMETA,LEFTALT,LEFTSHIFT,S: shutdown now
+.EE
+
+.SH BUGS
+.PP
+Known bugs are:
+.IP -
+Commands in the config file cannot be multiline
+.IP - 
+Child processes
+are waited at program exit possibly causing the process tree to hang as there is
+no real child process control
+.IP -
+Upon removing or adding devices the program waits a couple of seconds for the
+devices to settle, during this time the program stops working.
+.PP
+To send bug reports open an issue or submint a merge request at
+https://git.alemauri.eu/alema/hkd
+
+.SH AUTHOR
+Alessandro Mauri <alemauri001@gmail.com>
+
+.SH "SEE ALSO"
+.BR sxhkd(1),
+.BR thd(1)
