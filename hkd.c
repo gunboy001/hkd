@@ -634,6 +634,10 @@ void parse_config_file (void)
 			free(line);
 			continue;
 		}
+		for (size_t i = 1; i < linelen; i++) {
+			if (line[i] == '#')
+				line[i] = '\0';
+		}
 
 		// TODO: multiline commands, ending with "\\n"
 		// TODO: better error checks in order to remove unnecessary
