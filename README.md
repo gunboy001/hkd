@@ -1,5 +1,5 @@
 # hkd: hotkey deamon
-hkd allows to define system-wide hotkeys, independently of graphical environment,
+hkd allows to define system-wide hotkeys independent from the graphical session,
 this means, that hotkeys will work in x11, wayland and even in a tty.
 
 ## Compatibility
