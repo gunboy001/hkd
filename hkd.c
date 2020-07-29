@@ -411,7 +411,8 @@ void int_handler (int signum)
 {
 	switch (signum) {
 	case SIGINT:
-		fprintf(stderr, yellow("Received interrupt signal, exiting gracefully...\n"));
+		if (vflag)
+			printf(yellow("Received interrupt signal, exiting gracefully...\n"));
 		dead = 1;
 		break;
 	}
@@ -486,19 +487,22 @@ void update_descriptors_list (int **fds, int *fd_num)
 		/* Open device and check if it can give key events otherwise ignore it */
 		tmp_fd = open(ev_path, O_RDONLY | O_NONBLOCK);
 		if (tmp_fd < 0) {
-			fprintf(stderr, red("Could not open device %s\n"), ev_path);
+			if (vflag)
+				printf(red("Could not open device %s\n"), ev_path);
 			continue;
 		}
 
 		memset(evtype_b, 0, sizeof(evtype_b));
 		if (ioctl(tmp_fd, EVIOCGBIT(0, EV_MAX), evtype_b) < 0) {
-			fprintf(stderr, red("Could not read capabilities of device %s\n"),ev_path);
+			if (vflag)
+				printf(red("Could not read capabilities of device %s\n"),ev_path);
 			close(tmp_fd);
 			continue;
 		}
 
 		if (!test_bit(EV_KEY, evtype_b)) {
-			fprintf(stderr, yellow("Ignoring device %s\n"), ev_path);
+			if (vflag)
+				printf(yellow("Ignoring device %s\n"), ev_path);
 			close(tmp_fd);
 			continue;
 		}
@@ -513,10 +517,11 @@ void update_descriptors_list (int **fds, int *fd_num)
 	}
 	closedir(ev_dir);
 	if (*fd_num) {
-		fprintf(stderr, green("Monitoring %d devices\n"), *fd_num);
+		if (vflag)
+			printf(green("Monitoring %d devices\n"), *fd_num);
 	} else {
 		fprintf(stderr, red("Could not open any devices, exiting\n"));
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -635,7 +640,8 @@ void parse_config_file (void)
 			wordfree(&result);
 			if (fd)
 				break;
-			perror(yellow("error opening config file"));
+			if (vflag)
+				printf(yellow("config file not found at %s\n"), config_paths[i]);
 		}
 		if (!fd)
 			die("could not open any config files, check the log for more details");
