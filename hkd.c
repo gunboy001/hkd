@@ -35,11 +35,9 @@
 #define green(str) (ANSI_COLOR_GREEN str ANSI_COLOR_RESET)
 #define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
-//#define die(str) {fputs(ANSI_COLOR_RED, stderr); perror(str); fputs(ANSI_COLOR_RESET, stderr); exit(errno);}
 #define die(str) {perror(red(str)); exit(errno);}
 #define array_size(val) (val ? sizeof(val)/sizeof(val[0]) : 0)
 #define array_size_const(val) ((int)(sizeof(val)/sizeof(val[0])))
-#define parse_failure(str, line) {fprintf(stderr, "Error in config file at line %d: " str "\n", line); exit(EXIT_FAILURE);}
 
 #define EVENT_SIZE (sizeof(struct inotify_event))
 #define EVENT_BUF_LEN (1024*(EVENT_SIZE+16))
@@ -226,6 +224,7 @@ void parse_config_file (void);
 void update_descriptors_list (int **, int *);
 int prepare_epoll (int *, int, int);
 unsigned short key_to_code (char *);
+int is_empty (const char *s);
 /* hotkey list operations */
 void hotkey_list_add (struct hotkey_list_e *, struct key_buffer *, char *, int);
 void hotkey_list_destroy (struct hotkey_list_e *);
@@ -690,7 +689,6 @@ void parse_config_file (void)
 		keys = strtok(line, ":");
 		command = strtok(NULL, ":");
 		if (!command || !keys) {
-			parse_failure("No command or keys specified", linenum);
 			fprintf(stderr, "Error at line %d:"
 			"No command or keys specified\n", linenum);
 			exit(EXIT_FAILURE);
@@ -713,6 +711,13 @@ void parse_config_file (void)
 		tmp = strlen(command) - 1;
 		while (isspace(command[tmp]))
 			command[tmp--] = '\0';
+
+		// Check if keys and command are not blank
+		if (is_empty(keys) || is_empty(command)) {
+			fprintf(stderr, red("Error at line %d: "
+			"command or keys not present\n"), linenum);
+			exit(EXIT_FAILURE);
+		}
 
 		key_buffer_reset(&kb);
 		char *k = strtok(keys, ",");
@@ -738,4 +743,14 @@ unsigned short key_to_code (char *key)
 			return key_conversion_table[i].value;
 	}
 	return 0;
+}
+
+int is_empty (const char *s)
+{
+	while (*s != '\0') {
+		if (!isspace((unsigned char)*s))
+			return 0;
+		s++;
+	}
+	return 1;
 }
