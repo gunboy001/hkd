@@ -246,6 +246,7 @@ int main (int argc, char *argv[])
 		switch (opc) {
 		case 'v':
 			vflag = 1;
+			break;
 		case 'c':
 			ext_config_file = malloc(strlen(optarg) + 1);
 			if (!ext_config_file)
@@ -643,6 +644,7 @@ void parse_config_file (void)
 	struct key_buffer kb;
 	for (int linenum = 1;; linenum++) {
 		int fuzzy = 0, tmp;
+		char * linebegin = NULL;
 		char *line = NULL, *keys = NULL, *command = NULL;
 		size_t linelen = 0;
 
@@ -650,6 +652,8 @@ void parse_config_file (void)
 			break;
 		if (linelen < 2)
 			continue;
+
+		linebegin = line;
 
 		// Remove leading spaces
 		while (isspace(line[0]) && linelen > 1) {
@@ -659,7 +663,7 @@ void parse_config_file (void)
 
 		// Skip comments and blank lines
 		if (line[0] == '#' || !line[0]) {
-			free(line);
+			free(linebegin);
 			continue;
 		}
 		for (size_t i = 1; i < linelen; i++) {
