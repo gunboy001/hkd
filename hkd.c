@@ -652,8 +652,10 @@ void parse_config_file (void)
 			continue;
 
 		// Remove leading spaces
-		while (isspace(line[0]) && linelen > 1)
-			memmove(line, &line[1], --linelen);
+		while (isspace(line[0]) && linelen > 1) {
+			line = &line[1];
+			linelen--;
+		}
 
 		// Skip comments and blank lines
 		if (line[0] == '#' || !line[0]) {
@@ -666,16 +668,15 @@ void parse_config_file (void)
 		}
 
 		// TODO: multiline commands, ending with "\\n"
-		// TODO: better error checks in order to remove unnecessary
-		// memmoves (line has to begin with cmment or "*-"), etc.
-
 		if (line[0] == '*')
 			fuzzy = 1;
-		memmove(line, &line[1], --linelen);
+		line = &line[1];
+		linelen--;
 		// Remove leading spaces
-		while (isspace(line[0]) && linelen > 1)
-			memmove(line, &line[1], --linelen);
-
+		while (isspace(line[0]) && linelen > 1) {
+			line = &line[1];
+			linelen--;
+		}
 		keys = strtok(line, ":");
 		command = strtok(NULL, ":");
 		if (!command || !keys) {
@@ -695,8 +696,10 @@ void parse_config_file (void)
 
 		// Remove leading and trailing spaces in command
 		tmp = strlen(command);
-		while (isspace(command[0]) && tmp > 1)
-			memmove(command, &command[1], --tmp);
+		while (isspace(command[0]) && tmp > 1) {
+			command = &command[1];
+			tmp--;
+		}
 		tmp = strlen(command) - 1;
 		while (isspace(command[tmp]))
 			command[tmp--] = '\0';
