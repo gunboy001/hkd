@@ -330,11 +330,15 @@ int main (int argc, char *argv[])
 		if (pb.size <= prev_size)
 			continue;
 
-		// FIXME: keys after "z" are not shown properly, wrong name
 		if (vflag) {
+			int ci;
 			printf("Pressed keys: ");
-			for (unsigned int i = 0; i < pb.size; i++)
-				printf("%s ", key_conversion_table[pb.buf[i] - 1].name);
+			for (unsigned int i = 0; i < pb.size; i++) {
+				ci = i;
+				while (pb.buf[i] != key_conversion_table[ci + 1].value)
+					ci++;
+				printf("%s ", key_conversion_table[ci + 1].name);
+			}
 			putchar('\n');
 		}
 
