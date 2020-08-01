@@ -228,8 +228,8 @@ int is_empty (const char *s);
 /* hotkey list operations */
 void hotkey_list_add (struct hotkey_list_e *, struct key_buffer *, char *, int);
 void hotkey_list_destroy (struct hotkey_list_e *);
+void hotkey_list_append_command (struct hotkey_list_e *, char *);
 
-// TODO: use getopts() to parse command line options
 int main (int argc, char *argv[])
 {
 	/* Handle SIGINT */
@@ -414,6 +414,10 @@ void int_handler (int signum)
 {
 	switch (signum) {
 	case SIGINT:
+		if (dead) {
+			fprintf(stderr, red("an error occured, exiting\n"));
+			exit(EXIT_FAILURE);
+		}
 		if (vflag)
 			printf(yellow("Received interrupt signal, exiting gracefully...\n"));
 		dead = 1;
@@ -437,7 +441,7 @@ void exec_command (char *command)
 		return;
 	default: 
 		/* Some other error */
-		fprintf(stderr, "Could not parse, %s is not valid", command);
+		fprintf(stderr, "Could not parse, %s is not valid\n", command);
 		return;
 	}
 	
@@ -600,6 +604,20 @@ void hotkey_list_add (struct hotkey_list_e *head, struct key_buffer *kb, char *c
 		hotkey_list = tmp;
 }
 
+void hotkey_list_append_command (struct hotkey_list_e *head, char *cmd)
+{
+	char *tmp;
+	if (!head)
+		return;
+	while (head->next)
+		head = head->next;
+	tmp = realloc(head->command, sizeof(head->command) + strlen(cmd) + 1);
+	if (!tmp)
+		die("realloc in hotkey_list_append_command()");
+	head->command = tmp;
+	strcat(head->command, cmd);
+}
+
 void parse_config_file (void)
 {
 	wordexp_t result = {0};	
@@ -650,15 +668,18 @@ void parse_config_file (void)
 			die("could not open any config files, check the log for more details");
 	}
 
+	int iscmd = 0;
 	struct key_buffer kb;
 	for (int linenum = 1;; linenum++) {
-		int fuzzy = 0, tmp;
+		int fuzzy = 0, tmp; 
 		char * linebegin = NULL;
 		char *line = NULL, *keys = NULL, *command = NULL;
 		size_t linelen = 0;
 
 		if (getline(&line, &linelen, fd) == -1)
 			break;
+
+		linelen = strlen(line);
 		if (linelen < 2)
 			continue;
 
@@ -671,72 +692,106 @@ void parse_config_file (void)
 		}
 
 		// Skip comments and blank lines
-		if (line[0] == '#' || !line[0]) {
-			free(linebegin);
-			continue;
-		}
+		if (line[0] == '#' || !line[0])
+			goto parse_end_free;
+
 		for (size_t i = 1; i < linelen; i++) {
 			if (line[i] == '#')
 				line[i] = '\0';
 		}
-
-		// TODO: multiline commands, ending with "\\n"
-		if (line[0] == '*')
-			fuzzy = 1;
-		line = &line[1];
-		linelen--;
-		// Remove leading spaces
-		while (isspace(line[0]) && linelen > 1) {
-			line = &line[1];
-			linelen--;
-		}
-		keys = strtok(line, ":");
-		command = strtok(NULL, ":");
-		if (!command || !keys) {
-			fprintf(stderr, "Error at line %d:"
-			"No command or keys specified\n", linenum);
-			exit(EXIT_FAILURE);
-		}
-
-		// Remove whitespaces in keys
-		tmp = strlen(keys);
-		for (int i = 0; i < tmp; i++) {
-			if (isspace(keys[i])) {
-				memmove(&line[i], &line[i + 1], --tmp);
-			}
-		}
-
-		// Remove leading and trailing spaces in command
-		tmp = strlen(command);
-		while (isspace(command[0]) && tmp > 1) {
-			command = &command[1];
-			tmp--;
-		}
-		tmp = strlen(command) - 1;
-		while (isspace(command[tmp]))
-			command[tmp--] = '\0';
-
-		// Check if keys and command are not blank
-		if (is_empty(keys) || is_empty(command)) {
-			fprintf(stderr, red("Error at line %d: "
-			"command or keys not present\n"), linenum);
-			exit(EXIT_FAILURE);
-		}
-
-		key_buffer_reset(&kb);
-		char *k = strtok(keys, ",");
-		unsigned short kc;
-		do {
-			if (!(kc = key_to_code(k))) {
-				fprintf(stderr, "Error at line %d:"
-				"%s is not a valid key", linenum, k);
+		if (!iscmd) {
+			if (line[0] != '-' && line[0] != '*') {
+				fprintf(stderr, red("Error at line %d: "
+				"Hotkey definitions must start with '*' or '-'\n"), linenum);
 				exit(EXIT_FAILURE);
 			}
-			key_buffer_add(&kb, kc);
-		} while ((k = strtok(NULL, ",")));
-		hotkey_list_add(hotkey_list, &kb, command, fuzzy);
-		hotkey_size_mask |= 1 << (kb.size - 1);
-		key_buffer_reset(&kb);	
+
+			if (line[0] == '*')
+				fuzzy = 1;
+			line = &line[1];
+			linelen--;
+			// Remove leading spaces
+			while (isspace(line[0]) && linelen > 1) {
+				line = &line[1];
+				linelen--;
+			}
+			keys = strtok(line, ":");
+			command = strtok(NULL, ":");
+			if (!command || !keys) {
+				fprintf(stderr, red("Error at line %d: "
+				"No command or keys specified\n"), linenum);
+				exit(EXIT_FAILURE);
+			}
+			// Check if keys and command are not blank
+			if (is_empty(keys) || is_empty(command)) {
+				fprintf(stderr, red("Error at line %d: "
+				"command or keys not present\n"), linenum);
+				exit(EXIT_FAILURE);
+			}
+
+			// Remove whitespaces in keys
+			tmp = strlen(keys);
+			for (int i = 0; i < tmp; i++) {
+				if (isspace(keys[i]))
+					memmove(&line[i], &line[i + 1], --tmp);
+			}
+
+			// Remove leading and trailing spaces in command
+			tmp = strlen(command);
+			while (isspace(command[0]) && tmp > 1) {
+				command = &command[1];
+				tmp--;
+			}
+			for (tmp = strlen(command) - 1; isspace(command[tmp]); tmp--) {
+				if (isblank(command[tmp]))
+					command[tmp] = '\0';
+			}
+
+			if (command[strlen(command) - 2] == '\\') {
+				iscmd = 1;
+			} else {
+				iscmd = 0;
+				tmp = strlen(command) - 1;
+				while (isspace(command[tmp]))
+					command[tmp--] = '\0';
+			}
+
+			key_buffer_reset(&kb);
+			char *k = strtok(keys, ",");
+			unsigned short kc;
+			do {
+				if (!(kc = key_to_code(k))) {
+					fprintf(stderr, red("Error at line %d: "
+					"%s is not a valid key"), linenum, k);
+					exit(EXIT_FAILURE);
+				}
+				key_buffer_add(&kb, kc);
+			} while ((k = strtok(NULL, ",")));
+			hotkey_list_add(hotkey_list, &kb, command, fuzzy);
+			hotkey_size_mask |= 1 << (kb.size - 1);
+			key_buffer_reset(&kb);
+		} else {
+			for (tmp = strlen(line) - 1; isspace(line[tmp]); tmp--) {
+				if (isblank(line[tmp]))
+					line[tmp] = '\0';
+			}
+			linelen = strlen(line);
+
+			// if line is blank skip
+			if (is_empty(line))
+				goto parse_end_free;
+
+			if (line[linelen - 2] == '\\') {
+				iscmd = 1;
+			} else {
+				iscmd = 0;
+				while (isspace(line[linelen - 1]))
+					line[--linelen] = '\0';
+			}
+			hotkey_list_append_command(hotkey_list, line);
+		}
+		parse_end_free:
+		free(linebegin);
 	}
 }
 
