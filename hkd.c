@@ -335,8 +335,11 @@ int main (int argc, char *argv[])
 			printf("Pressed keys: ");
 			for (unsigned int i = 0; i < pb.size; i++) {
 				ci = i;
-				while (pb.buf[i] != key_conversion_table[ci + 1].value)
+				while (pb.buf[i] != key_conversion_table[ci + 1].value) {
+					if (ci >= array_size_const(key_conversion_table) - 2)
+						break;
 					ci++;
+				}
 				printf("%s ", key_conversion_table[ci + 1].name);
 			}
 			putchar('\n');
