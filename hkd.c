@@ -35,7 +35,7 @@
 #define green(str) (ANSI_COLOR_GREEN str ANSI_COLOR_RESET)
 #define red(str) (ANSI_COLOR_RED str ANSI_COLOR_RESET)
 #define test_bit(yalv, abs_b) ((((char *)abs_b)[yalv/8] & (1<<yalv%8)) > 0)
-#define die(str) {perror(red(str)); exit(errno);}
+#define die(str) {perror(ANSI_COLOR_RED str); fputs(ANSI_COLOR_RESET, stderr); exit(errno);}
 #define array_size(val) (val ? sizeof(val)/sizeof(val[0]) : 0)
 #define array_size_const(val) ((int)(sizeof(val)/sizeof(val[0])))
 
@@ -457,7 +457,8 @@ void exec_command (char *command)
 	case 0:
 		/* This is the child process, execute the command */
 		execvp(result.we_wordv[0], result.we_wordv);
-		die("Could not run command");
+		fprintf(stderr, red("%s : %s\n"), command, strerror(errno));
+		exit(errno);
 		break;
 	default:
 		while (waitpid(cpid, NULL, WNOHANG) == -1) {}
@@ -592,13 +593,17 @@ void hotkey_list_destroy (struct hotkey_list_e *head)
 void hotkey_list_add (struct hotkey_list_e *head, struct key_buffer *kb, char *cmd, int f)
 {
 	struct hotkey_list_e *tmp;
+	int size;
+	if (!(size = strlen(cmd)))
+		return;
 	if (!(tmp = malloc(sizeof(struct hotkey_list_e))))
 		die("memory allocation failed in hotkey_list_add()");
-	if (!(tmp->command = malloc(sizeof(cmd))))
+	if (!(tmp->command = malloc(size + 1)))
 		die("memory allocation failed in hotkey_list_add()");
 	strcpy(tmp->command, cmd);
 	tmp->kb = *kb;
 	tmp->fuzzy = f;
+	tmp->next = NULL;
 
 	if (head) {
 		for (; head->next; head = head->next);
