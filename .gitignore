@@ -1,10 +1,8 @@
 *.out
 *.swp
 *.o
-hkd*
-!hkd.1
-tests/parse
-tests/ioctl
-tests/evtest
-tests/struct_init
-tests/inotify
+hkd
+hkd_debug
+tests/**
+!tests/*.c
+!tests/makefile
