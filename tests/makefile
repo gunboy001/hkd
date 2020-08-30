@@ -1,7 +1,9 @@
 CC = gcc
-CFLAGS = -Wall -std=c99
+CFLAGS = -Wall -std=c99 -g
 
 parse: parse.c
+
+parse_v2: parse_v2.c
 
 ioctl: ioctl.c
 
@@ -12,4 +14,4 @@ inotify: inotify.c
 struct_init: struct_init.c
 
 clean:
-	rm *.o parse ioctl inotify struct_init 2> /dev/null
+	rm -f *.o parse parse_v2 ioctl inotify struct_init
