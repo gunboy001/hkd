@@ -20,6 +20,7 @@
 /* Value defines */
 #define FILE_NAME_MAX_LENGTH 255
 #define KEY_BUFFER_SIZE 16
+#define BLOCK_SIZE 512
 
 /* ANSI colors escape codes */
 #define ANSI_COLOR_RED     "\x1b[31m"
@@ -224,11 +225,9 @@ void parse_config_file (void);
 void update_descriptors_list (int **, int *);
 int prepare_epoll (int *, int, int);
 unsigned short key_to_code (char *);
-int is_empty (const char *s);
 /* hotkey list operations */
 void hotkey_list_add (struct hotkey_list_e *, struct key_buffer *, char *, int);
 void hotkey_list_destroy (struct hotkey_list_e *);
-void hotkey_list_append_command (struct hotkey_list_e *, char *);
 
 int main (int argc, char *argv[])
 {
@@ -612,24 +611,25 @@ void hotkey_list_add (struct hotkey_list_e *head, struct key_buffer *kb, char *c
 		hotkey_list = tmp;
 }
 
-void hotkey_list_append_command (struct hotkey_list_e *head, char *cmd)
-{
-	char *tmp;
-	if (!head)
-		return;
-	while (head->next)
-		head = head->next;
-	tmp = realloc(head->command, sizeof(head->command) + strlen(cmd) + 1);
-	if (!tmp)
-		die("realloc in hotkey_list_append_command()");
-	head->command = tmp;
-	strcat(head->command, cmd);
-}
-
 void parse_config_file (void)
 {
 	wordexp_t result = {0};	
 	FILE *fd;
+	int remaining = 0;
+	char block[BLOCK_SIZE + 1] = {0};
+	char *bb = NULL;
+	// 0: normal, 1: skip line 2: get directive 3: get keys 4: get command 5: output
+	int state = 0;
+	char *keys = NULL;
+	char *cmd = NULL;
+	int alloc_tmp = 0, alloc_size = 0;
+	int fuzzy = 0;
+	struct key_buffer kb;
+
+	int i_tmp = 0, done = 0;
+	char *cp_tmp = NULL;
+	unsigned short us_tmp = 0;
+	
 	if (ext_config_file) {
 		switch (wordexp(ext_config_file, &result, 0)) {
 		case 0:
@@ -675,131 +675,160 @@ void parse_config_file (void)
 		if (!fd)
 			die("could not open any config files, check the log for more details");
 	}
-
-	int iscmd = 0;
-	struct key_buffer kb;
-	for (int linenum = 1;; linenum++) {
-		int fuzzy = 0, tmp; 
-		char * linebegin = NULL;
-		char *line = NULL, *keys = NULL, *command = NULL;
-		size_t linelen = 0;
-
-		if (getline(&line, &linelen, fd) == -1)
+	while (!done) {
+		memset(block, 0, BLOCK_SIZE);
+		remaining = fread(block, sizeof(char), BLOCK_SIZE, fd);
+		if (!remaining)
 			break;
+		bb = block;
 
-		linelen = strlen(line);
-		if (linelen < 2)
-			continue;
-
-		linebegin = line;
-
-		// Remove leading spaces
-		while (isspace(line[0]) && linelen > 1) {
-			line = &line[1];
-			linelen--;
-		}
-
-		// Skip comments and blank lines
-		if (line[0] == '#' || !line[0])
-			goto parse_end_free;
-
-		for (size_t i = 1; i < linelen; i++) {
-			if (line[i] == '#')
-				line[i] = '\0';
-		}
-		if (!iscmd) {
-			if (line[0] != '-' && line[0] != '*') {
-				fprintf(stderr, red("Error at line %d: "
-				"Hotkey definitions must start with '*' or '-'\n"), linenum);
-				exit(EXIT_FAILURE);
-			}
-
-			if (line[0] == '*')
-				fuzzy = 1;
-			line = &line[1];
-			linelen--;
-			// Remove leading spaces
-			while (isspace(line[0]) && linelen > 1) {
-				line = &line[1];
-				linelen--;
-			}
-			keys = strtok(line, ":");
-			command = strtok(NULL, ":");
-			if (!command || !keys) {
-				fprintf(stderr, red("Error at line %d: "
-				"No command or keys specified\n"), linenum);
-				exit(EXIT_FAILURE);
-			}
-			// Check if keys and command are not blank
-			if (is_empty(keys) || is_empty(command)) {
-				fprintf(stderr, red("Error at line %d: "
-				"command or keys not present\n"), linenum);
-				exit(EXIT_FAILURE);
-			}
-
-			// Remove whitespaces in keys
-			tmp = strlen(keys);
-			for (int i = 0; i < tmp; i++) {
-				if (isspace(keys[i]))
-					memmove(&line[i], &line[i + 1], --tmp);
-			}
-
-			// Remove leading and trailing spaces in command
-			tmp = strlen(command);
-			while (isspace(command[0]) && tmp > 1) {
-				command = &command[1];
-				tmp--;
-			}
-			for (tmp = strlen(command) - 1; isspace(command[tmp]); tmp--) {
-				if (isblank(command[tmp]))
-					command[tmp] = '\0';
-			}
-
-			if (command[strlen(command) - 2] == '\\') {
-				iscmd = 1;
-			} else {
-				iscmd = 0;
-				tmp = strlen(command) - 1;
-				while (isspace(command[tmp]))
-					command[tmp--] = '\0';
-			}
-
-			key_buffer_reset(&kb);
-			char *k = strtok(keys, ",");
-			unsigned short kc;
-			do {
-				if (!(kc = key_to_code(k))) {
-					fprintf(stderr, red("Error at line %d: "
-					"%s is not a valid key"), linenum, k);
-					exit(EXIT_FAILURE);
+		while (remaining > 0) {
+			switch (state) {
+			// First state
+			case 0:
+				// remove whitespaces
+				while (isblank(*bb) && remaining > 0)
+					bb++, remaining--;
+				if (remaining <= 0)
+					break;
+				// get state
+				switch (*bb) {
+				case '\n':
+				case '#':
+					state = 1;
+					break;
+				case '\0':
+					done = 1;
+					break;
+				default:
+					state = 2;
+					break;
 				}
-				key_buffer_add(&kb, kc);
-			} while ((k = strtok(NULL, ",")));
-			hotkey_list_add(hotkey_list, &kb, command, fuzzy);
-			hotkey_size_mask |= 1 << (kb.size - 1);
-			key_buffer_reset(&kb);
-		} else {
-			for (tmp = strlen(line) - 1; isspace(line[tmp]); tmp--) {
-				if (isblank(line[tmp]))
-					line[tmp] = '\0';
-			}
-			linelen = strlen(line);
+				break;
+			// Skip line (comment)
+			case 1:
+				while (*bb != '\n' && remaining > 0)
+					bb++, remaining--;
+				bb++, remaining--;
+				if (remaining > 0)
+					state = 0;
+				break;
+			// Get compairson method
+			case 2:
+				switch (*bb) {
+				case '-':
+					fuzzy = 0;
+					break;
+				case '*':
+					fuzzy = 1;
+					break;
+				default:
+					die("invalid line")
+					break;
+				}
+				bb++, remaining--;
+				state = 3;
+				break;
+			// Get keys
+			case 3:
+				if (!keys) {
+					if (!(keys = malloc(alloc_size = (sizeof(char) * 64))))
+						die("malloc for keys in parse_config_file()");
+					memset(keys, 0, alloc_size);
+					alloc_tmp = 0;
+				} else if (alloc_tmp >= alloc_size) {
+					if (!(keys = realloc(keys, alloc_size *= 2)))
+						die("realloc for keys in parse_config_file()");
+					memset(&keys[alloc_size / 2], 0, alloc_size / 2);
+				}
 
-			// if line is blank skip
-			if (is_empty(line))
-				goto parse_end_free;
+				for (; remaining > 0 &&
+				(bb[alloc_tmp] != ':' && bb[alloc_tmp] != '\n') &&
+				alloc_tmp < alloc_size;
+				remaining--, alloc_tmp++);
 
-			if (line[linelen - 2] == '\\') {
-				iscmd = 1;
-			} else {
-				iscmd = 0;
-				while (isspace(line[linelen - 1]))
-					line[--linelen] = '\0';
+				if (remaining <= 0 || alloc_tmp == alloc_size) {
+					strncat(keys, bb, alloc_tmp);
+					bb += alloc_tmp;
+					break;
+				} else if (bb[alloc_tmp] == ':') {
+					strncat(keys, bb, alloc_tmp);
+					bb += alloc_tmp + 1;
+					remaining--;
+					state = 4;
+					break;
+				} else {
+					die("no command");
+				}
+				break;
+			// Get command
+			case 4:
+				if (!cmd) {
+					if (!(cmd = malloc(alloc_size = (sizeof(char) * 128))))
+						die("malloc for cmd in parse_config_file()");
+					memset(cmd, 0, alloc_size);
+					alloc_tmp = 0;
+				} else if (alloc_tmp >= alloc_size) {
+					if (!(cmd = realloc(cmd, alloc_size *= 2)))
+						die("realloc for cmd in parse_config_file()");
+					memset(&cmd[alloc_size / 2], 0, alloc_size / 2);
+				}
+
+				for (; remaining > 0 &&
+				bb[alloc_tmp] != '\n' &&
+				alloc_tmp < alloc_size;
+				remaining--, alloc_tmp++);
+
+				if (remaining <= 0 || alloc_tmp == alloc_size) {
+					strncat(cmd, bb, alloc_tmp);
+					bb += alloc_tmp;
+					break;
+				} else {
+					strncat(cmd, bb, alloc_tmp);
+					if (!(bb[alloc_tmp - 1] == '\\'))
+						state = 5;
+					bb += alloc_tmp + 1;
+					remaining--;
+					break;
+				}
+				break;
+			case 5:
+				i_tmp = strlen(keys);
+				for (int i = 0; i < i_tmp; i++) {
+					if (isblank(keys[i])) {
+						memmove(&keys[i], &keys[i + 1], --i_tmp);
+						keys[i_tmp] = '\0';
+						}
+				}
+				cp_tmp = strtok(keys, ",");
+				if(!cp_tmp)
+					die("no keys");
+				do {
+					if (!(us_tmp = key_to_code(cp_tmp)))
+						die("key not valid");
+					key_buffer_add(&kb, us_tmp);
+				} while ((cp_tmp = strtok(NULL, ",")));
+
+				cp_tmp = cmd;
+				while (isblank(*cp_tmp))
+					cp_tmp++;
+
+				hotkey_list_add(hotkey_list, &kb, cp_tmp, fuzzy);
+				hotkey_size_mask |= 1 << (kb.size - 1);
+				// DO STUFF
+
+				key_buffer_reset(&kb);
+				free(keys);
+				free(cmd);
+				cp_tmp = keys = cmd = NULL;
+				i_tmp = state = 0;
+				break;
+			default:
+				die("unknown state in parse_config_file");
+				break;
+
 			}
-			hotkey_list_append_command(hotkey_list, line);
 		}
-		parse_end_free:
-		free(linebegin);
 	}
 }
 
@@ -810,14 +839,4 @@ unsigned short key_to_code (char *key)
 			return key_conversion_table[i].value;
 	}
 	return 0;
-}
-
-int is_empty (const char *s)
-{
-	while (*s != '\0') {
-		if (!isspace((unsigned char)*s))
-			return 0;
-		s++;
-	}
-	return 1;
 }
