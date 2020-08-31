@@ -820,7 +820,8 @@ void parse_config_file (void)
 						linenum - 1, cp_tmp);
 						exit(-1);
 					}
-					key_buffer_add(&kb, us_tmp);
+					if (key_buffer_add(&kb, us_tmp))
+						die("Too many keys");
 				} while ((cp_tmp = strtok(NULL, ",")));
 
 				cp_tmp = cmd;
