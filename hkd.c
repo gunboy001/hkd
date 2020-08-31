@@ -408,8 +408,7 @@ int key_buffer_remove (struct key_buffer *pb, unsigned short key)
 void key_buffer_reset (struct key_buffer *kb)
 {
 	kb->size = 0;
-	for (int i = 0; i < KEY_BUFFER_SIZE; i++)
-		kb->buf[i] = 0;
+	memset(kb->buf, 0, KEY_BUFFER_SIZE * sizeof(unsigned short));
 }
 
 void int_handler (int signum)
@@ -616,20 +615,20 @@ void parse_config_file (void)
 	wordexp_t result = {0};	
 	FILE *fd;
 	int remaining = 0;
-	char block[BLOCK_SIZE + 1] = {0};
-	char *bb = NULL;
 	// 0: normal, 1: skip line 2: get directive 3: get keys 4: get command 5: output
 	int state = 0;
-	char *keys = NULL;
-	char *cmd = NULL;
 	int alloc_tmp = 0, alloc_size = 0;
 	int fuzzy = 0;
-	struct key_buffer kb;
-
-	int i_tmp = 0, done = 0;
+	int i_tmp = 0, done = 0, linenum = 1;
+	char block[BLOCK_SIZE + 1] = {0};
+	char *bb = NULL;
+	char *keys = NULL;
+	char *cmd = NULL;
 	char *cp_tmp = NULL;
+	struct key_buffer kb;
 	unsigned short us_tmp = 0;
-	
+
+	key_buffer_reset(&kb);
 	if (ext_config_file) {
 		switch (wordexp(ext_config_file, &result, 0)) {
 		case 0:
@@ -682,7 +681,7 @@ void parse_config_file (void)
 			break;
 		bb = block;
 
-		while (remaining > 0) {
+		while (remaining > 0 && !done) {
 			switch (state) {
 			// First state
 			case 0:
@@ -710,6 +709,7 @@ void parse_config_file (void)
 				while (*bb != '\n' && remaining > 0)
 					bb++, remaining--;
 				bb++, remaining--;
+				linenum++;
 				if (remaining > 0)
 					state = 0;
 				break;
@@ -723,7 +723,10 @@ void parse_config_file (void)
 					fuzzy = 1;
 					break;
 				default:
-					die("invalid line")
+					fprintf(stderr, red("Error at line %d: "
+					"hotkey definition must start with '-' or '*'\n"),
+					linenum);
+					exit(-1);
 					break;
 				}
 				bb++, remaining--;
@@ -758,7 +761,10 @@ void parse_config_file (void)
 					state = 4;
 					break;
 				} else {
-					die("no command");
+					fprintf(stderr, red("Error at line %d: "
+					"no command specified, missing ':' after keys\n"),
+					linenum);
+					exit(-1);
 				}
 				break;
 			// Get command
@@ -789,6 +795,7 @@ void parse_config_file (void)
 						state = 5;
 					bb += alloc_tmp + 1;
 					remaining--;
+					linenum++;
 					break;
 				}
 				break;
@@ -801,17 +808,29 @@ void parse_config_file (void)
 						}
 				}
 				cp_tmp = strtok(keys, ",");
-				if(!cp_tmp)
-					die("no keys");
+				if(!cp_tmp) {
+					fprintf(stderr, red("Error at line %d: "
+					"keys not present\n"), linenum - 1);
+					exit(-1);
+				}
 				do {
-					if (!(us_tmp = key_to_code(cp_tmp)))
-						die("key not valid");
+					if (!(us_tmp = key_to_code(cp_tmp))) {
+						fprintf(stderr, red("Error at line %d: "
+						"%s is not a valid key\n"),
+						linenum - 1, cp_tmp);
+						exit(-1);
+					}
 					key_buffer_add(&kb, us_tmp);
 				} while ((cp_tmp = strtok(NULL, ",")));
 
 				cp_tmp = cmd;
 				while (isblank(*cp_tmp))
 					cp_tmp++;
+				if (*cp_tmp == '\0') {
+					fprintf(stderr, red("Error at line %d: "
+					"command not present\n"), linenum - 1);
+					exit(-1);
+				}
 
 				hotkey_list_add(hotkey_list, &kb, cp_tmp, fuzzy);
 				hotkey_size_mask |= 1 << (kb.size - 1);
