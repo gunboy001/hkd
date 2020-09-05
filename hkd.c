@@ -16,6 +16,7 @@
 #include <sys/inotify.h>
 #include <wordexp.h>
 #include <ctype.h>
+#include <sys/stat.h>
 
 /* Value defines */
 #define FILE_NAME_MAX_LENGTH 255
@@ -206,6 +207,7 @@ struct hotkey_list_e {
 
 struct hotkey_list_e *hotkey_list = NULL;
 const char evdev_root_dir[] = "/dev/input/";
+const char lock_file[] = "/tmp/hkd.lock";
 unsigned long hotkey_size_mask = 0;
 char *ext_config_file = NULL;
 /* Flags */
@@ -223,6 +225,7 @@ void int_handler (int signum);
 void exec_command (char *);
 void parse_config_file (void);
 void update_descriptors_list (int **, int *);
+void remove_lock (void);
 int prepare_epoll (int *, int, int);
 unsigned short key_to_code (char *);
 /* hotkey list operations */
@@ -231,6 +234,21 @@ void hotkey_list_destroy (struct hotkey_list_e *);
 
 int main (int argc, char *argv[])
 {
+
+	/* Check if hkd is already running */
+	int lock_file_descriptor;
+	struct flock fl;
+	lock_file_descriptor = open(lock_file, O_RDWR | O_CREAT, 0600);
+	if (lock_file_descriptor < 0)
+		die("can't open lock file");
+	fl.l_start = 0;
+	fl.l_len = 0;
+	fl.l_type = F_WRLCK;
+	fl.l_whence = SEEK_SET;
+	if (fcntl(lock_file_descriptor, F_SETLK, &fl) < 0)
+		die("hkd is already running");
+	atexit(remove_lock);
+
 	/* Handle SIGINT */
 	dead = 0;
 	struct sigaction action;
@@ -361,6 +379,7 @@ int main (int argc, char *argv[])
 
 	// TODO: better child handling, for now all children receive the same
 	// interrupts as the father so everything should work fine
+	remove(lock_file);
 	wait(NULL);
 	if (!dead)
 		fprintf(stderr, red("an error occured\n"));
@@ -859,4 +878,9 @@ unsigned short key_to_code (char *key)
 			return key_conversion_table[i].value;
 	}
 	return 0;
+}
+
+void remove_lock (void)
+{
+	unlink(lock_file);
 }
