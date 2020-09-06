@@ -43,6 +43,8 @@
 
 #define EVENT_SIZE (sizeof(struct inotify_event))
 #define EVENT_BUF_LEN (1024*(EVENT_SIZE+16))
+#define EVDEV_ROOT_DIR "/dev/input/"
+#define LOCK_FILE "/tmp/hkd.lock"
 
 const char *config_paths[] = {
 	"$XDG_CONFIG_HOME/hkd/config",
@@ -206,8 +208,6 @@ struct hotkey_list_e {
 };
 
 struct hotkey_list_e *hotkey_list = NULL;
-const char evdev_root_dir[] = "/dev/input/";
-const char lock_file[] = "/tmp/hkd.lock";
 unsigned long hotkey_size_mask = 0;
 char *ext_config_file = NULL;
 /* Flags */
@@ -234,11 +234,20 @@ void hotkey_list_destroy (struct hotkey_list_e *);
 
 int main (int argc, char *argv[])
 {
+	int fd_num = 0;
+	int *fds = NULL;
+	int lock_file_descriptor;
+	int opc;
+	int ev_fd;
+	int event_watcher = inotify_init1(IN_NONBLOCK);
+	ssize_t rb; // Read bits
+	struct flock fl;
+	struct sigaction action;
+	struct input_event event;
+	struct key_buffer pb = {{0}, 0}; // Pressed keys buffer
 
 	/* Check if hkd is already running */
-	int lock_file_descriptor;
-	struct flock fl;
-	lock_file_descriptor = open(lock_file, O_RDWR | O_CREAT, 0600);
+	lock_file_descriptor = open(LOCK_FILE, O_RDWR | O_CREAT, 0600);
 	if (lock_file_descriptor < 0)
 		die("can't open lock file");
 	fl.l_start = 0;
@@ -251,13 +260,11 @@ int main (int argc, char *argv[])
 
 	/* Handle SIGINT */
 	dead = 0;
-	struct sigaction action;
 	memset(&action, 0, sizeof(action));
 	action.sa_handler = int_handler;
 	sigaction(SIGINT, &action, NULL);
 
 	/* Parse command line arguments */
-	int opc;
 	while ((opc = getopt(argc, argv, "vc:")) != -1) {
 		switch (opc) {
 		case 'v':
@@ -268,45 +275,41 @@ int main (int argc, char *argv[])
 			if (!ext_config_file)
 				die("malloc in main()");
 			 strcpy(ext_config_file, optarg);
-		break;		
+		break;
 		}
 	}
 
 	/* Parse config file */
 	parse_config_file();
-	
+
 	/* Load descriptors */
-	int fd_num = 0;
-	int *fds = NULL;
 	update_descriptors_list(&fds, &fd_num);
 
 	/* Prepare directory update watcher */
-	int event_watcher = inotify_init1(IN_NONBLOCK);
 	if (event_watcher < 0)
 		die("could not call inotify_init");
-	if (inotify_add_watch(event_watcher, evdev_root_dir, IN_CREATE | IN_DELETE) < 0)
+	if (inotify_add_watch(event_watcher, EVDEV_ROOT_DIR, IN_CREATE | IN_DELETE) < 0)
 		die("could not add /dev/input to the watch list");
 
-	struct input_event event;
-	struct key_buffer pb = {{0}, 0}; // Pressed keys buffer
-	ssize_t rb; // Read bits
-
 	/* Prepare epoll list */
-	int ev_fd;
 	ev_fd = prepare_epoll(fds, fd_num, event_watcher);
 
 	/* MAIN EVENT LOOP */
 	mainloop_begin:
 	for (;;) {
-		/* On linux use epoll(2) as it gives better performance */
+		int t = 0;
+		static unsigned int prev_size;
 		static struct epoll_event ev_type;
+		struct hotkey_list_e *tmp;
+		char buf[EVENT_BUF_LEN];
+
+		/* On linux use epoll(2) as it gives better performance */
 		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) < 0 || dead)
 			break;
 
 		if (ev_type.events != EPOLLIN)
 			continue;
 
-		char buf[EVENT_BUF_LEN];
 		if (read(event_watcher, buf, EVENT_BUF_LEN) >= 0) {
 			sleep(1); // wait for devices to settle
 			update_descriptors_list(&fds, &fd_num);
@@ -316,7 +319,6 @@ int main (int argc, char *argv[])
 			goto mainloop_begin;
 		}
 
-		static unsigned int prev_size;
 		prev_size = pb.size;
 		for (int i = 0; i < fd_num; i++) {
 
@@ -362,8 +364,6 @@ int main (int argc, char *argv[])
 			putchar('\n');
 		}
 
-		struct hotkey_list_e *tmp;
-		int t = 0;
 		if (hotkey_size_mask & 1 << (pb.size - 1)) {
 			for (tmp = hotkey_list; tmp != NULL; tmp = tmp->next) {
 				if (tmp->fuzzy)
@@ -372,14 +372,13 @@ int main (int argc, char *argv[])
 					t = key_buffer_compare(&pb, &tmp->kb);
 				if (t)
 					exec_command(tmp->command);
-					
+
 			}
 		}
 	}
 
 	// TODO: better child handling, for now all children receive the same
 	// interrupts as the father so everything should work fine
-	remove(lock_file);
 	wait(NULL);
 	if (!dead)
 		fprintf(stderr, red("an error occured\n"));
@@ -448,7 +447,7 @@ void int_handler (int signum)
 /* Executes a command from a string */
 void exec_command (char *command)
 {
-	static wordexp_t result;	
+	static wordexp_t result;
 
 	/* Expand the string for the program to run */
 	switch (wordexp (command, &result, 0)) {
@@ -459,12 +458,12 @@ void exec_command (char *command)
 		 * then perhaps part of the result was allocated */
 		wordfree (&result);
 		return;
-	default: 
+	default:
 		/* Some other error */
 		fprintf(stderr, "Could not parse, %s is not valid\n", command);
 		return;
 	}
-	
+
 	pid_t cpid;
 	switch (cpid = fork()) {
 	case -1:
@@ -487,18 +486,16 @@ void exec_command (char *command)
 void update_descriptors_list (int **fds, int *fd_num)
 {
 	struct dirent *file_ent;
-	char ev_path[sizeof(evdev_root_dir) + FILE_NAME_MAX_LENGTH + 1];
+	char ev_path[sizeof(EVDEV_ROOT_DIR) + FILE_NAME_MAX_LENGTH + 1];
 	void *tmp_p;
 	int tmp_fd;
 	unsigned char evtype_b[EV_MAX];
 	/* Open the event directory */
-	DIR *ev_dir = opendir(evdev_root_dir);
+	DIR *ev_dir = opendir(EVDEV_ROOT_DIR);
 	if (!ev_dir)
 		die("could not open /dev/input");
 
 	(*fd_num) = 0;
-//	if ((*fds))
-//		free(*fds);
 
 	for (;;) {
 
@@ -509,8 +506,8 @@ void update_descriptors_list (int **fds, int *fd_num)
 			continue;
 
 		/* Compose absolute path from relative */
-		strncpy(ev_path, evdev_root_dir, sizeof(evdev_root_dir) + FILE_NAME_MAX_LENGTH);
-	   	strncat(ev_path, file_ent->d_name, sizeof(evdev_root_dir) + FILE_NAME_MAX_LENGTH);
+		strncpy(ev_path, EVDEV_ROOT_DIR, sizeof(EVDEV_ROOT_DIR) + FILE_NAME_MAX_LENGTH);
+	   	strncat(ev_path, file_ent->d_name, sizeof(EVDEV_ROOT_DIR) + FILE_NAME_MAX_LENGTH);
 
 		/* Open device and check if it can give key events otherwise ignore it */
 		tmp_fd = open(ev_path, O_RDONLY | O_NONBLOCK);
@@ -555,9 +552,9 @@ void update_descriptors_list (int **fds, int *fd_num)
 
 int prepare_epoll (int *fds, int fd_num, int event_watcher)
 {
+ 	int ev_fd = epoll_create(1);
 	static struct epoll_event epoll_read_ev;
  	epoll_read_ev.events = EPOLLIN;
- 	int ev_fd = epoll_create(1);
  	if (ev_fd < 0)
  		die("failed epoll_create");
  	if (epoll_ctl(ev_fd, EPOLL_CTL_ADD, event_watcher, &epoll_read_ev) < 0)
@@ -571,9 +568,9 @@ int prepare_epoll (int *fds, int fd_num, int event_watcher)
 /* Checks if two key buffers contain the same keys in no specified order */
 int key_buffer_compare_fuzzy (struct key_buffer *haystack, struct key_buffer *needle)
 {
+	int ff = 0;
 	if (haystack->size != needle->size)
 		return 0;
-	int ff = 0;
 	for (int x = needle->size - 1; x >= 0; x--) {
 		for (unsigned int i = 0; i < haystack->size; i++)
 			ff += (needle->buf[x] == haystack->buf[i]);
@@ -609,8 +606,8 @@ void hotkey_list_destroy (struct hotkey_list_e *head)
 
 void hotkey_list_add (struct hotkey_list_e *head, struct key_buffer *kb, char *cmd, int f)
 {
-	struct hotkey_list_e *tmp;
 	int size;
+	struct hotkey_list_e *tmp;
 	if (!(size = strlen(cmd)))
 		return;
 	if (!(tmp = malloc(sizeof(struct hotkey_list_e))))
@@ -631,7 +628,7 @@ void hotkey_list_add (struct hotkey_list_e *head, struct key_buffer *kb, char *c
 
 void parse_config_file (void)
 {
-	wordexp_t result = {0};	
+	wordexp_t result = {0};
 	FILE *fd;
 	int remaining = 0;
 	// 0: normal, 1: skip line 2: get directive 3: get keys 4: get command 5: output
@@ -657,11 +654,11 @@ void parse_config_file (void)
 		 	* then perhaps part of the result was allocated */
 			wordfree (&result);
 			die("not enough space")
-		default: 
+		default:
 			/* Some other error */
 			die("path not valid");
 		}
-	
+
 		fd = fopen(result.we_wordv[0], "r");
 		wordfree(&result);
 		if (!fd)
@@ -678,11 +675,11 @@ void parse_config_file (void)
 		 		* then perhaps part of the result was allocated */
 				wordfree (&result);
 				die("not enough space")
-			default: 
+			default:
 				/* Some other error */
 				die("path not valid");
 			}
-	
+
 			fd = fopen(result.we_wordv[0], "r");
 			wordfree(&result);
 			if (fd)
@@ -882,5 +879,5 @@ unsigned short key_to_code (char *key)
 
 void remove_lock (void)
 {
-	unlink(lock_file);
+	unlink(LOCK_FILE);
 }
