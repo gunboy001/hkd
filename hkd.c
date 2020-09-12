@@ -327,8 +327,10 @@ int main (int argc, char *argv[])
 		char buf[EVENT_BUF_LEN];
 
 		/* On linux use epoll(2) as it gives better performance */
-		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) < 0 || dead)
-			break;
+		if (epoll_wait(ev_fd, &ev_type, fd_num, -1) < 0 || dead) {
+			if (errno != EINTR)
+				break;
+		}
 
 		if (ev_type.events != EPOLLIN)
 			continue;
@@ -404,7 +406,7 @@ int main (int argc, char *argv[])
 	// interrupts as the father so everything should work fine
 	wait(NULL);
 	if (!dead)
-		fprintf(stderr, red("an error occured\n"));
+		fprintf(stderr, red("An error occured: %s\n"), errno ? strerror(errno): "idk");
 	close(ev_fd);
 	close(event_watcher);
 	for (int i = 0; i < fd_num; i++)
