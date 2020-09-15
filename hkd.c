@@ -44,7 +44,7 @@
 /* Value defines */
 #define FILE_NAME_MAX_LENGTH 255
 #define KEY_BUFFER_SIZE 16
-#define BLOCK_SIZE 1024
+#define BLOCK_SIZE 512
 
 /* ANSI colors escape codes */
 #define ANSI_COLOR_RED     "\x1b[31m"
@@ -667,7 +667,8 @@ void parse_config_file (void)
 	int alloc_tmp = 0, alloc_size = 0;
 	int fuzzy = 0;
 	int i_tmp = 0, linenum = 1;
-	int exit_state = 0; /* 0: continue, 1: last block, 2: exit */
+	// 0: aok, 1: request block, 2: last block, -1: exit
+	int exit_state = 0;
 	char block[BLOCK_SIZE + 1] = {0};
 	char *bb = NULL;
 	char *keys = NULL;
@@ -683,7 +684,7 @@ void parse_config_file (void)
 			break;
 		case WRDE_NOSPACE:
 			/* If the error was WRDE_NOSPACE,
-		 	* then perhaps part of the result was allocated */
+		 	 * then perhaps part of the result was allocated */
 			wordfree (&result);
 			die("Not enough space:");
 		default:
@@ -703,7 +704,7 @@ void parse_config_file (void)
 				break;
 			case WRDE_NOSPACE:
 				/* If the error was WRDE_NOSPACE,
-		 		* then perhaps part of the result was allocated */
+		 		 * then perhaps part of the result was allocated */
 				wordfree (&result);
 				die("Not enough space:");
 			default:
@@ -720,19 +721,19 @@ void parse_config_file (void)
 		if (!fd)
 			die("Could not open any config files, check the log for more details");
 	}
-	while (exit_state < 2) {
+	while (exit_state >= 0) {
 		int tmp = 0;
-		if (!exit_state) {
-			memset(block, 0, BLOCK_SIZE + 1);
-			tmp = fread(block, sizeof(char), BLOCK_SIZE, fd);
-			if (!tmp)
-				break;
-			if (tmp < BLOCK_SIZE || feof(fd))
-				exit_state = 1;
-		}
+		memset(block, 0, BLOCK_SIZE + 1);
+		tmp = fread(block, sizeof(char), BLOCK_SIZE, fd);
+		if (!tmp)
+			break;
+		if (tmp < BLOCK_SIZE || feof(fd))
+			exit_state = 2;
+		else
+			exit_state = 0;
 		bb = block;
 
-		while (exit_state < 2) {
+		while (exit_state == 0 || exit_state == 2) {
 			switch (state) {
 			// First state
 			case 0:
@@ -744,8 +745,8 @@ void parse_config_file (void)
 				case EOF:
 				case '\0':
 					// If it is the end of the last block exit
-					if (exit_state)
-						exit_state = 2;
+					if (exit_state > 1)
+						exit_state = -1;
 					break;
 				case '\n':
 				case '#':
@@ -764,6 +765,8 @@ void parse_config_file (void)
 					bb++;
 					linenum++;
 					state = 0;
+				} else {
+					exit_state = 1;
 				}
 				break;
 			// Get compairson method
@@ -790,20 +793,23 @@ void parse_config_file (void)
 					if (!(keys = malloc(alloc_size = (sizeof(char) * 64))))
 						die("malloc for keys in parse_config_file():");
 					memset(keys, 0, alloc_size);
-					alloc_tmp = 0;
 				} else if (alloc_tmp >= alloc_size) {
-					if (!(keys = realloc(keys, alloc_size *= 2)))
+					if (!(keys = realloc(keys, alloc_size = alloc_size * 2)))
 						die("realloc for keys in parse_config_file():");
 					memset(&keys[alloc_size / 2], 0, alloc_size / 2);
 				}
 
-				for (; bb[alloc_tmp] &&
+				for (alloc_tmp = 0; bb[alloc_tmp] &&
 				bb[alloc_tmp] != ':' && bb[alloc_tmp] != '\n' &&
 				alloc_tmp < alloc_size; alloc_tmp++);
 
 				if (!bb[alloc_tmp] || alloc_tmp == alloc_size) {
 					strncat(keys, bb, alloc_tmp);
 					bb += alloc_tmp;
+					if (exit_state > 1)
+						die("Keys not finished before end of file");
+					else
+						exit_state = 1;
 					break;
 				} else if (bb[alloc_tmp] == ':') {
 					strncat(keys, bb, alloc_tmp);
@@ -822,19 +828,22 @@ void parse_config_file (void)
 					if (!(cmd = malloc(alloc_size = (sizeof(char) * 128))))
 						die("malloc for cmd in parse_config_file():");
 					memset(cmd, 0, alloc_size);
-					alloc_tmp = 0;
 				} else if (alloc_tmp >= alloc_size) {
-					if (!(cmd = realloc(cmd, alloc_size *= 2)))
+					if (!(cmd = realloc(cmd, alloc_size = alloc_size * 2)))
 						die("realloc for cmd in parse_config_file():");
 					memset(&cmd[alloc_size / 2], 0, alloc_size / 2);
 				}
 
-				for (; bb[alloc_tmp] && bb[alloc_tmp] != '\n' &&
+				for (alloc_tmp = 0; bb[alloc_tmp] && bb[alloc_tmp] != '\n' &&
 				alloc_tmp < alloc_size; alloc_tmp++);
 
 				if (!bb[alloc_tmp] || alloc_tmp == alloc_size) {
 					strncat(cmd, bb, alloc_tmp);
 					bb += alloc_tmp;
+					if (exit_state > 1)
+						die("Command not finished before end of file");
+					else
+						exit_state = 1;
 					break;
 				} else {
 					strncat(cmd, bb, alloc_tmp);
