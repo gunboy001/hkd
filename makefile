@@ -7,7 +7,7 @@ MANPREFIX = ${PREFIX}/share/man
 hkd: hkd.c
 
 debug:
-	gcc $(CFLAGS) -g hkd.c -o hkd_debug
+	gcc -Wall -O0 -g hkd.c -o hkd_debug
 
 install: hkd
 	mkdir -p ${DESTDIR}${PREFIX}/bin
