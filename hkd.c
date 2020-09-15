@@ -44,7 +44,7 @@
 /* Value defines */
 #define FILE_NAME_MAX_LENGTH 255
 #define KEY_BUFFER_SIZE 16
-#define BLOCK_SIZE 512
+#define BLOCK_SIZE 1024
 
 /* ANSI colors escape codes */
 #define ANSI_COLOR_RED     "\x1b[31m"
@@ -662,12 +662,12 @@ void parse_config_file (void)
 {
 	wordexp_t result = {0};
 	FILE *fd;
-	int remaining = 0;
 	// 0: normal, 1: skip line 2: get directive 3: get keys 4: get command 5: output
 	int state = 0;
 	int alloc_tmp = 0, alloc_size = 0;
 	int fuzzy = 0;
-	int i_tmp = 0, done = 0, linenum = 1;
+	int i_tmp = 0, linenum = 1;
+	int exit_state = 0; /* 0: continue, 1: last block, 2: exit */
 	char block[BLOCK_SIZE + 1] = {0};
 	char *bb = NULL;
 	char *keys = NULL;
@@ -720,30 +720,36 @@ void parse_config_file (void)
 		if (!fd)
 			die("Could not open any config files, check the log for more details");
 	}
-	while (!done) {
-		memset(block, 0, BLOCK_SIZE);
-		remaining = fread(block, sizeof(char), BLOCK_SIZE, fd);
-		if (!remaining)
-			break;
+	while (exit_state < 2) {
+		int tmp = 0;
+		if (!exit_state) {
+			memset(block, 0, BLOCK_SIZE + 1);
+			tmp = fread(block, sizeof(char), BLOCK_SIZE, fd);
+			if (!tmp)
+				break;
+			if (tmp < BLOCK_SIZE || feof(fd))
+				exit_state = 1;
+		}
 		bb = block;
 
-		while (remaining > 0 && !done) {
+		while (exit_state < 2) {
 			switch (state) {
 			// First state
 			case 0:
 				// remove whitespaces
-				while (isblank(*bb) && remaining > 0)
-					bb++, remaining--;
-				if (remaining <= 0)
-					break;
+				while (isblank(*bb))
+					bb++;
 				// get state
 				switch (*bb) {
+				case EOF:
+				case '\0':
+					// If it is the end of the last block exit
+					if (exit_state)
+						exit_state = 2;
+					break;
 				case '\n':
 				case '#':
 					state = 1;
-					break;
-				case '\0':
-					done = 1;
 					break;
 				default:
 					state = 2;
@@ -752,12 +758,13 @@ void parse_config_file (void)
 				break;
 			// Skip line (comment)
 			case 1:
-				while (*bb != '\n' && remaining > 0)
-					bb++, remaining--;
-				bb++, remaining--;
-				linenum++;
-				if (remaining > 0)
+				while (*bb != '\n' && *bb)
+					bb++;
+				if (*bb) {
+					bb++;
+					linenum++;
 					state = 0;
+				}
 				break;
 			// Get compairson method
 			case 2:
@@ -774,7 +781,7 @@ void parse_config_file (void)
 					linenum);
 					break;
 				}
-				bb++, remaining--;
+				bb++;
 				state = 3;
 				break;
 			// Get keys
@@ -790,19 +797,17 @@ void parse_config_file (void)
 					memset(&keys[alloc_size / 2], 0, alloc_size / 2);
 				}
 
-				for (; remaining > 0 &&
-				(bb[alloc_tmp] != ':' && bb[alloc_tmp] != '\n') &&
-				alloc_tmp < alloc_size;
-				remaining--, alloc_tmp++);
+				for (; bb[alloc_tmp] &&
+				bb[alloc_tmp] != ':' && bb[alloc_tmp] != '\n' &&
+				alloc_tmp < alloc_size; alloc_tmp++);
 
-				if (remaining <= 0 || alloc_tmp == alloc_size) {
+				if (!bb[alloc_tmp] || alloc_tmp == alloc_size) {
 					strncat(keys, bb, alloc_tmp);
 					bb += alloc_tmp;
 					break;
 				} else if (bb[alloc_tmp] == ':') {
 					strncat(keys, bb, alloc_tmp);
 					bb += alloc_tmp + 1;
-					remaining--;
 					state = 4;
 					break;
 				} else {
@@ -824,12 +829,10 @@ void parse_config_file (void)
 					memset(&cmd[alloc_size / 2], 0, alloc_size / 2);
 				}
 
-				for (; remaining > 0 &&
-				bb[alloc_tmp] != '\n' &&
-				alloc_tmp < alloc_size;
-				remaining--, alloc_tmp++);
+				for (; bb[alloc_tmp] && bb[alloc_tmp] != '\n' &&
+				alloc_tmp < alloc_size; alloc_tmp++);
 
-				if (remaining <= 0 || alloc_tmp == alloc_size) {
+				if (!bb[alloc_tmp] || alloc_tmp == alloc_size) {
 					strncat(cmd, bb, alloc_tmp);
 					bb += alloc_tmp;
 					break;
@@ -838,12 +841,13 @@ void parse_config_file (void)
 					if (!(bb[alloc_tmp - 1] == '\\'))
 						state = 5;
 					bb += alloc_tmp + 1;
-					remaining--;
 					linenum++;
 					break;
 				}
 				break;
 			case 5:
+				if (!keys)
+					die("error");
 				i_tmp = strlen(keys);
 				for (int i = 0; i < i_tmp; i++) {
 					if (isblank(keys[i])) {
@@ -875,13 +879,13 @@ void parse_config_file (void)
 
 				hotkey_list_add(hotkey_list, &kb, cp_tmp, fuzzy);
 				hotkey_size_mask |= 1 << (kb.size - 1);
-				// DO STUFF
 
 				key_buffer_reset(&kb);
 				free(keys);
 				free(cmd);
 				cp_tmp = keys = cmd = NULL;
-				i_tmp = state = 0;
+				i_tmp = 0;
+				state = 0;
 				break;
 			default:
 				die("Unknown state in parse_config_file");
