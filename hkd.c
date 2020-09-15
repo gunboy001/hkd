@@ -235,7 +235,7 @@ char *ext_config_file = NULL;
 /* Flags */
 int vflag = 0;
 int dead = 0; // exit flag
-
+int dump = 0;
 /* key buffer operations */
 int key_buffer_add (struct key_buffer*, unsigned short);
 int key_buffer_remove (struct key_buffer*, unsigned short);
@@ -251,6 +251,7 @@ void remove_lock (void);
 void die (const char *, ...);
 int prepare_epoll (int *, int, int);
 unsigned short key_to_code (char *);
+const char * code_to_name (unsigned int);
 /* hotkey list operations */
 void hotkey_list_add (struct hotkey_list_e *, struct key_buffer *, char *, int);
 void hotkey_list_destroy (struct hotkey_list_e *);
@@ -288,7 +289,7 @@ int main (int argc, char *argv[])
 	sigaction(SIGINT, &action, NULL);
 
 	/* Parse command line arguments */
-	while ((opc = getopt(argc, argv, "vc:")) != -1) {
+	while ((opc = getopt(argc, argv, "vc:d")) != -1) {
 		switch (opc) {
 		case 'v':
 			vflag = 1;
@@ -298,12 +299,30 @@ int main (int argc, char *argv[])
 			if (!ext_config_file)
 				die("malloc in main():");
 			 strcpy(ext_config_file, optarg);
+			 break;
+		case 'd':
+			dump = 1;
+			break;
 		break;
 		}
 	}
 
 	/* Parse config file */
 	parse_config_file();
+
+	/* If a dump is requested print the hotkey list then exit */
+	if (dump) {
+		printf("DUMPING HOTKEY LIST\n\n");
+		for (struct hotkey_list_e *tmp = hotkey_list; tmp; tmp = tmp->next) {
+			printf("Hotkey\n");
+			printf("\tKeys: ");
+			for (unsigned int i = 0; i < tmp->kb.size; i++)
+				printf("%s ", code_to_name(tmp->kb.buf[i]));
+			printf("\n\tMatching: %s\n", tmp->fuzzy ? "fuzzy" : "ordered");
+			printf("\tCommand: %s\n\n", tmp->command);
+		}
+		exit(EXIT_SUCCESS);
+	}
 
 	/* Load descriptors */
 	update_descriptors_list(&fds, &fd_num);
@@ -375,17 +394,9 @@ int main (int argc, char *argv[])
 			continue;
 
 		if (vflag) {
-			int ci;
 			printf("Pressed keys: ");
-			for (unsigned int i = 0; i < pb.size; i++) {
-				ci = i;
-				while (pb.buf[i] != key_conversion_table[ci + 1].value) {
-					if (ci >= array_size_const(key_conversion_table) - 2)
-						break;
-					ci++;
-				}
-				printf("%s ", key_conversion_table[ci + 1].name);
-			}
+			for (unsigned int i = 0; i < pb.size; i++)
+				printf("%s ", code_to_name(pb.buf[i]));
 			putchar('\n');
 		}
 
@@ -913,4 +924,13 @@ void die(const char *fmt, ...)
 
 	va_end(ap);
 	exit(errno ? errno : 1);
+}
+
+const char * code_to_name (unsigned int code)
+{
+	for (int i = 0; i < array_size_const(key_conversion_table); i++) {
+		if (key_conversion_table[i].value == code)
+			return key_conversion_table[i].name;
+	}
+	return "Key not recognized";
 }

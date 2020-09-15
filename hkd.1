@@ -6,6 +6,7 @@ hkd \- simple HotKey Daemon
 .SH SYNOPSIS
 .SY hkd
 .OP \-v
+.OP \-d
 .OP \-c file
 .YS
 
@@ -23,6 +24,9 @@ correctly.
 .IP \-v
 verbose, prints debug information and the internal pressed key buffer upon
 change acting as a crude keylogger :^)
+.IP \-d
+dump, used for debugging, it prints the whole hotkey list along with the
+information about the hotkeys (matching type, keys and associated command).
 .IP "\-c file"
 override default configuration file location, instead using the specified
 .I file
