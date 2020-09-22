@@ -249,6 +249,7 @@ void parse_config_file (void);
 void update_descriptors_list (int **, int *);
 void remove_lock (void);
 void die (const char *, ...);
+void usage (void);
 int prepare_epoll (int *, int, int);
 unsigned short key_to_code (char *);
 const char * code_to_name (unsigned int);
@@ -270,26 +271,8 @@ int main (int argc, char *argv[])
 	struct input_event event;
 	struct key_buffer pb = {{0}, 0}; // Pressed keys buffer
 
-	/* Check if hkd is already running */
-	lock_file_descriptor = open(LOCK_FILE, O_RDWR | O_CREAT, 0600);
-	if (lock_file_descriptor < 0)
-		die("Can't open lock file:");
-	fl.l_start = 0;
-	fl.l_len = 0;
-	fl.l_type = F_WRLCK;
-	fl.l_whence = SEEK_SET;
-	if (fcntl(lock_file_descriptor, F_SETLK, &fl) < 0)
-		die("hkd is already running");
-	atexit(remove_lock);
-
-	/* Handle SIGINT */
-	dead = 0;
-	memset(&action, 0, sizeof(action));
-	action.sa_handler = int_handler;
-	sigaction(SIGINT, &action, NULL);
-
 	/* Parse command line arguments */
-	while ((opc = getopt(argc, argv, "vc:d")) != -1) {
+	while ((opc = getopt(argc, argv, "vc:dh")) != -1) {
 		switch (opc) {
 		case 'v':
 			vflag = 1;
@@ -303,12 +286,33 @@ int main (int argc, char *argv[])
 		case 'd':
 			dump = 1;
 			break;
+		case 'h':
+			usage();
+			break;
 		break;
 		}
 	}
 
+	/* Handle SIGINT */
+	dead = 0;
+	memset(&action, 0, sizeof(action));
+	action.sa_handler = int_handler;
+	sigaction(SIGINT, &action, NULL);
+
 	/* Parse config file */
 	parse_config_file();
+
+	/* Check if hkd is already running */
+	lock_file_descriptor = open(LOCK_FILE, O_RDWR | O_CREAT, 0600);
+	if (lock_file_descriptor < 0)
+		die("Can't open lock file:");
+	fl.l_start = 0;
+	fl.l_len = 0;
+	fl.l_type = F_WRLCK;
+	fl.l_whence = SEEK_SET;
+	if (fcntl(lock_file_descriptor, F_SETLK, &fl) < 0)
+		die("hkd is already running");
+	atexit(remove_lock);
 
 	/* If a dump is requested print the hotkey list then exit */
 	if (dump) {
@@ -946,4 +950,14 @@ const char * code_to_name (unsigned int code)
 			return key_conversion_table[i].name;
 	}
 	return "Key not recognized";
+}
+
+void usage (void)
+{
+	puts("Usage: hkd [-vdh] [-c file]\n"
+	     "\t-v        verbose, prints all the key presses and debug information\n"
+	     "\t-d        dump, dumps the hotkey list and exits\n"
+	     "\t-h        prints this help message\n"
+	     "\t-f file   uses the specified file as config\n");
+	exit(EXIT_SUCCESS);
 }
