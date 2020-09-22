@@ -80,6 +80,11 @@ Key names are always capitalized and do not differenciate between upper or
 lower case, as such hotkeys that require a capitalized letter need to include
 RIGHTSHIFT or LEFTSHIFT in the keys section.
 Keys are intended as a list of comma separated strings.
+.PP
+hkd can live reload the configuration file by signaling it with 
+.I SIGUSR1
+for example with the command "$ pkill -USR1 -x hkd", for easier use one could add
+an hotkey to execute that command.
 
 .SH EXAMPLES
 This is a valid config file example

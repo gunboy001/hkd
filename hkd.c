@@ -298,6 +298,7 @@ int main (int argc, char *argv[])
 	memset(&action, 0, sizeof(action));
 	action.sa_handler = int_handler;
 	sigaction(SIGINT, &action, NULL);
+	sigaction(SIGUSR1, &action, NULL);
 
 	/* Parse config file */
 	parse_config_file();
@@ -478,6 +479,9 @@ void int_handler (int signum)
 		if (vflag)
 			printf(yellow("Received interrupt signal, exiting gracefully...\n"));
 		dead = 1;
+		break;
+	case SIGUSR1:
+		parse_config_file();
 		break;
 	}
 }
@@ -725,6 +729,8 @@ void parse_config_file (void)
 		if (!fd)
 			die("Could not open any config files, check the log for more details");
 	}
+
+	hotkey_list_destroy(hotkey_list);
 	while (exit_state >= 0) {
 		int tmp = 0;
 		memset(block, 0, BLOCK_SIZE + 1);
