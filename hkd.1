@@ -76,10 +76,8 @@ include normal keys, multimedia keys and special keys, for the full list
 of available keys either refer to the header file or this project's hkd.c
 source file. Keys as specified by the kernel are named "KEY_<name>", in this
 configuration file only the <name> is required.
-Key names are always capitalized and do not differenciate between upper or
-lower case, as such hotkeys that require a capitalized letter need to include
-RIGHTSHIFT or LEFTSHIFT in the keys section.
-Keys are intended as a list of comma separated strings.
+Key names are case-insensitive and are parsed as a list of comma separated
+strings, such as: 'leftmeta,UP', 'VOLUMEUP' or 'leftctrl,LEFTALT,cancel'.
 .PP
 hkd can live reload the configuration file by signaling it with 
 .I SIGUSR1

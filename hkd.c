@@ -918,6 +918,10 @@ void parse_config_file (void)
 
 unsigned short key_to_code (char *key)
 {
+	for (char *tmp = key; *tmp; tmp++) {
+		if (islower(*tmp))
+			*tmp += 'A' - 'a';
+	}
 	for (int i = 0; i < array_size_const(key_conversion_table); i++) {
 		if (!strcmp(key_conversion_table[i].name, key))
 			return key_conversion_table[i].value;
