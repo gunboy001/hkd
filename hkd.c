@@ -753,7 +753,7 @@ void parse_config_file (void)
 					bb++;
 				// get state
 				switch (*bb) {
-				case EOF:
+				case (int)EOF:
 				case '\0':
 					// If it is the end of the last block exit
 					if (exit_state > 1)
