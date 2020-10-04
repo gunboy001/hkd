@@ -753,7 +753,9 @@ void parse_config_file (void)
 					bb++;
 				// get state
 				switch (*bb) {
-				case (int)EOF:
+#if defined(__X86_64__) || defined(__i386__)
+				case EOF:
+#endif
 				case '\0':
 					// If it is the end of the last block exit
 					if (exit_state > 1)
