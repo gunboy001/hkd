@@ -749,7 +749,7 @@ void parse_config_file (void)
 			// First state
 			case 0:
 				// remove whitespaces
-				while (isblank(*bb))
+				while (isblank(*bb) && *bb)
 					bb++;
 				// get state
 				switch (*bb) {
@@ -760,6 +760,8 @@ void parse_config_file (void)
 					// If it is the end of the last block exit
 					if (exit_state > 1)
 						exit_state = -1;
+					else
+						exit_state = 1;
 					break;
 				case '\n':
 				case '#':
