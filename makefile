@@ -1,6 +1,6 @@
 CC ?= gcc
 CFLAGS = -Wall -Werror -pedantic --std=c99 -O2
-VERSION = 0.3
+VERSION = 0.4
 PREFIX = /usr/local
 MANPREFIX = ${PREFIX}/share/man
 

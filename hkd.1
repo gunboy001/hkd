@@ -72,12 +72,16 @@ error, read the manpage for
 for more info about the possible word expansion capabilities.
 .PP
 Possible keys are taken directly from linux's input.h header file, those
-include normal keys, multimedia keys and special keys, for the full list
-of available keys either refer to the header file or this project's hkd.c
-source file. Keys as specified by the kernel are named "KEY_<name>", in this
+include normal keys, multimedia keys, special keys and button events, for the
+full list of available keys either refer to the linux header file input.h or
+keys.h in this project.
+Keys as specified by the kernel are named "KEY_<name>", in this
 configuration file only the <name> is required.
 Key names are case-insensitive and are parsed as a list of comma separated
 strings, such as: 'leftmeta,UP', 'VOLUMEUP' or 'leftctrl,LEFTALT,cancel'.
+Some aliases are in place to avoid overly verbose repetitive definitions, those
+are: CTRL \-> LEFTCTRL, META \-> LEFTMETA, ALT \-> LEFTALT, SHIFT \-> LEFTSHIFT,
+PRINTSCR \-> SYSRQ, MIC_MUTE \-> F20.
 .PP
 hkd can live reload the configuration file by signaling it with 
 .I SIGUSR1
